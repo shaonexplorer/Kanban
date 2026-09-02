@@ -1,0 +1,66 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// A registered user of the Kanban Board application.
+model User {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  passwordHash String
+  createdAt    DateTime   @default(now())
+  // Boards owned by this user
+  boards       Board[]
+  // Boards this user has been invited to / collaborated on
+  boardUsers   BoardUser[]
+}
+
+/// A Kanban board — the top-level container for columns and tasks.
+model Board {
+  id         String      @id @default(uuid())
+  title      String
+  ownerId    String
+  createdAt  DateTime    @default(now())
+  owner      User        @relation(fields: [ownerId], references: [id])
+  columns    Column[]
+  sharedWith BoardUser[]
+}
+
+/// Join table representing a user's collaboration access to a board.
+model BoardUser {
+  id      String @id @default(uuid())
+  boardId String
+  userId  String
+  board   Board  @relation(fields: [boardId], references: [id])
+  user    User   @relation(fields: [userId], references: [id])
+
+  @@unique([boardId, userId])
+}
+
+/// A workflow stage (column) within a board.
+model Column {
+  id       String @id @default(uuid())
+  title    String
+  boardId  String
+  position Int    // Ordering within the board
+  board    Board  @relation(fields: [boardId], references: [id])
+  tasks    Task[]
+}
+
+/// An individual work item within a column.
+model Task {
+  id          String   @id @default(uuid())
+  title       String
+  description String?  // Optional
+  columnId    String
+  position    Int      // Ordering within the column
+  createdAt   DateTime @default(now())
+  column      Column   @relation(fields: [columnId], references: [id])
+}

@@ -1,7 +1,7 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
-/node_modules
+node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -19,6 +19,8 @@
 
 # production
 /build
+/dist
+/server/dist
 
 # misc
 .DS_Store
@@ -39,3 +41,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# IDE / agent tool caches (Prisma ctx7 skills, etc.)
+.agents/
+.claude/
+.windsurf/
+skills-lock.json
+prisma7.config.ts

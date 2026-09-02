@@ -1,0 +1,23 @@
+{
+  "version": "23",
+  "technical": {
+    "platform": "r2dbc:postgresql"
+  },
+  "generators": {
+    "client": {
+      "output": "../src/generated/prisma",
+      "provider": "prisma-client-js"
+    }
+  },
+  "datasources": {
+    "db": {
+      "url": "env.DATABASE_URL"
+    }
+  },
+  "appliedMigrations": [
+    {
+      "version": "20240101000000",
+      "checksum": "a1b2c3d4e5f6"
+    }
+  ]
+}
