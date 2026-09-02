@@ -1,6 +1,6 @@
-import createApp from "./app";
-import { config, validateEnv } from "./config";
-import prisma from "./lib/prisma";
+import createApp from "./app.js";
+import { config, validateEnv } from "./config/env.js";
+import { prisma } from "./lib/prisma.js";
 
 /**
  * Application entry point.
@@ -24,8 +24,8 @@ async function bootstrap(): Promise<void> {
     process.exit(1);
   }
 
-  app.listen(config.port, () => {
-    console.info(`🚀 Server listening on http://localhost:${config.port}`);
+  app.listen(config.PORT, () => {
+    console.info(`🚀 Server listening on http://localhost:${config.PORT}`);
   });
 }
 

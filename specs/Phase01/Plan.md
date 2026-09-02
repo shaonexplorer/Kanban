@@ -39,7 +39,7 @@ phase, a developer should be able to register, log in, and receive a signed JWT.
     - Dev: `typescript`, `@types/node`, `@types/express`, `@types/cors`,
       `@types/bcryptjs`, `@types/jsonwebtoken`, `ts-node-dev`, `prisma`,
       `@prisma/client`
-  - Initialize `tsconfig.json` (target: ES2022, module: commonjs, strict mode).
+  - Initialize `tsconfig.json` (target: ES2022, module: ES2022, strict mode).
   - Create `src/index.ts`, `src/app.ts`, `src/config/` directory.
   - Create `src/routes/auth.routes.ts`, `src/middleware/` directory.
   - Verify TypeScript compiles with `npx tsc --noEmit`.
