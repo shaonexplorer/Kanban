@@ -84,7 +84,7 @@ npm run prisma:studio
 - Dev runner: **`tsx`** (replaces `ts-node-dev` for ESM compatibility)
 - Auth: `POST /api/auth/register`, `POST /api/auth/login` → returns signed JWT
 - Middleware: `authMiddleware` (attaches `req.user`) and `requireAuth` (rejects unauthenticated)
-- Health: `GET /health`
+- Health: `GET /health` — returns 200 `{status: "ok", timestamp, db: "up"}` when the DB responds to a `SELECT 1`, or 503 `{status: "degraded", timestamp, db: "down", error}` when it doesn't (useful for orchestrators/liveness probes)
 
 **Layout (Modular MVC):**
 ```
