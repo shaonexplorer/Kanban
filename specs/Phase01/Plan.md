@@ -15,6 +15,14 @@ phase, a developer should be able to register, log in, and receive a signed JWT.
 - [x] 1.2 Backend Setup (Node.js + Express + TypeScript)
 - [x] 1.3 Frontend Setup (Next.js + Tailwind)
 - [x] 1.4 Prisma Configuration with initial migration applied
+- [x] 2.1 Prisma Schema (User, Board, BoardUser, Column, Task)
+- [x] 2.2 Run Migrations & verify schema
+- [x] 3.1 Registration Endpoint
+- [x] 3.2 Login Endpoint
+- [x] 3.3 JWT Configuration (secret, payload `{userId, email}`, 7d expiry)
+- [x] 3.4 Auth Middleware (`authMiddleware` + `requireAuth`)
+- [x] 3.5 Password Reset (stretch) — *not implemented; deferred out of Phase 1*
+- [x] 4.1 Health Check Endpoint (`GET /health` with DB ping)
 
 ### 1.1 Bootstrap the Monorepo
 
@@ -171,16 +179,16 @@ File: `backend/prisma/schema.prisma`
 
 ## Execution Order
 
-| Order | Task                                  | Estimated Effort |
-|-------|---------------------------------------|------------------|
-| 1     | Create directory structure            | 5 min            |
-| 2     | Initialize backend (Express + TS)     | 15 min           |
-| 3     | Initialize frontend (Next.js + Tailwind) | 15 min         |
-| 4     | Configure Prisma schema               | 20 min           |
-| 5     | Run migrations & verify schema        | 15 min           |
-| 6     | Implement registration endpoint       | 20 min           |
-| 7     | Implement login endpoint              | 15 min           |
-| 8     | Implement auth middleware             | 15 min           |
-| 9     | Add health check endpoint             | 5 min            |
-| 10    | Write integration tests for auth      | 20 min           |
-|       | **Total**                             | **~2.5 hours**   |
+| Order | Task                                  | Estimated Effort | Status |
+|-------|---------------------------------------|------------------|--------|
+| 1     | Create directory structure            | 5 min            | ✅ Done |
+| 2     | Initialize backend (Express + TS)     | 15 min           | ✅ Done |
+| 3     | Initialize frontend (Next.js + Tailwind) | 15 min         | ✅ Done |
+| 4     | Configure Prisma schema               | 20 min           | ✅ Done |
+| 5     | Run migrations & verify schema        | 15 min           | ✅ Done |
+| 6     | Implement registration endpoint       | 20 min           | ✅ Done |
+| 7     | Implement login endpoint              | 15 min           | ✅ Done |
+| 8     | Implement auth middleware             | 15 min           | ✅ Done |
+| 9     | Add health check endpoint             | 5 min            | ✅ Done |
+| 10    | Write integration tests for auth      | 20 min           | ⬜ Deferred to Phase 5 (no test framework yet) |
+|       | **Total**                             | **~2.5 hours**   |        |
