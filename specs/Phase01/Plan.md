@@ -8,17 +8,23 @@ phase, a developer should be able to register, log in, and receive a signed JWT.
 
 ---
 
-## Step 1 — Project Scaffolding
+## Step 1 — Project Scaffolding ✅ DONE
+
+**Completion status:**
+- [x] 1.1 Bootstrap the Monorepo – directories, README.md
+- [x] 1.2 Backend Setup (Node.js + Express + TypeScript)
+- [x] 1.3 Frontend Setup (Next.js + Tailwind)
+- [x] 1.4 Prisma Configuration with initial migration applied
 
 ### 1.1 Bootstrap the Monorepo
 
 - Create the top-level project directory layout:
+
   ```
   Mini Kanban Board/
   ├── backend/
   ├── frontend/
   ├── specs/
-  ├── docker-compose.yml
   ├── .gitignore
   └── README.md
   ```
@@ -53,12 +59,12 @@ phase, a developer should be able to register, log in, and receive a signed JWT.
 
 - In `backend/`, run `npx prisma init`.
 - Configure `DATABASE_URL` in `.env` pointing to a local PostgreSQL instance:
+
   ```
   DATABASE_URL="postgresql://USER:PASS@localhost:5432/kanban?schema=public"
   ```
-- Ensure `prisma/schema.prisma` uses the `postgresql` provider.
 
----
+- Ensure `prisma/schema.prisma` uses the `postgresql` provider.
 
 ## Step 2 — Database Schema Design
 

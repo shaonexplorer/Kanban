@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Mini Kanban Board/
 ├── client/
 │   └── kanban-board-client/    # Next.js 16 + React 19 + TypeScript + Tailwind CSS v4
-├── server/                      # Backend (to be created: Node.js + Express + TypeScript + Prisma)
+├── server/                      # Backend (Node.js + Express + TypeScript + Prisma) — Phase 1 complete
 ├── specs/                       # Project specifications and documentation
 │   ├── Mission.md              # Project purpose and success criteria
 │   ├── Techstack.md            # Tech stack decisions and planned libraries
@@ -17,15 +17,18 @@ Mini Kanban Board/
 └── specs.md                     # Top-level spec summary
 ```
 
-**Important:** The `client/kanban-board-client/` directory is a separate Git repository (own `.git`). The `server/` directory is currently empty — the backend has not yet been initialized.
+**Important:** The `client/kanban-board-client/` directory is a separate Git repository (own `.git`). The `server/` directory contains the implemented backend (auth routes, health check, Prisma schema, JWT middleware).
+
+**Note:** Docker is intentionally not used in this project. There is no `docker-compose.yml` or `Dockerfile` — run the database, backend, and frontend directly on the host.
 
 ## Tech Stack
 
 - **Frontend:** Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS v4
-- **Backend:** Node.js + Express + TypeScript (planned; not yet scaffolded)
-- **Database:** PostgreSQL + Prisma (planned)
-- **Auth:** JWT tokens + bcrypt password hashing (planned)
+- **Backend:** Node.js + Express 5 + TypeScript
+- **Database:** PostgreSQL + Prisma 7 (with `@prisma/adapter-pg` driver adapter)
+- **Auth:** JWT tokens (`jsonwebtoken`) + bcrypt password hashing (`bcryptjs`)
 - **Package manager:** npm
+- **No Docker / containers** — services run directly on the host
 
 ## Frontend Development
 
@@ -52,18 +55,57 @@ The project uses Tailwind CSS v4 with the `@tailwindcss/postcss` package — con
 
 ## Backend Development
 
-The backend will live at `server/` (not yet scaffolded). Based on the specs, the intended stack is:
+The backend lives at `server/` and is already scaffolded with Phase 1 complete.
 
-- Express.js with TypeScript
-- Prisma ORM with PostgreSQL
-- JWT + bcrypt for authentication
+```bash
+cd server
 
-When scaffolding the backend, follow the patterns established in `specs/Phase01/Plan.md` and `specs/Phase01/Requirements.md`.
+# Development
+npm run dev          # Start Express with ts-node-dev (auto-reload) on port 4000
+
+# Build & deploy
+npm run build        # Compile TypeScript to dist/
+npm start            # Run compiled output (node dist/index.js)
+
+# Type checking & Prisma
+npm run lint         # tsc --noEmit
+npm run prisma:generate
+npm run prisma:migrate
+npm run prisma:studio
+```
+
+**Stack:**
+- Express 5 with TypeScript (target ES2022, commonjs, strict mode)
+- Prisma 7 client generated to `src/generated/prisma/` (uses `@prisma/adapter-pg` driver adapter — required by Prisma 7)
+- Auth: `POST /api/auth/register`, `POST /api/auth/login` → returns signed JWT
+- Middleware: `authMiddleware` (attaches `req.user`) and `requireAuth` (rejects unauthenticated)
+- Health: `GET /health`
+
+**Layout:**
+```
+server/
+├── prisma/
+│   ├── schema.prisma       # User, Board, BoardUser, Column, Task models
+│   └── migrations/         # Generated SQL migrations
+├── src/
+│   ├── index.ts            # Entry point — validates env, connects DB, starts server
+│   ├── app.ts              # Express app factory (helmet, cors, json, routes)
+│   ├── config/             # Env validation & config object
+│   ├── lib/prisma.ts       # Shared Prisma client (hot-reload safe)
+│   ├── routes/             # auth.routes.ts, health.routes.ts
+│   ├── middleware/         # auth.middleware.ts
+│   └── generated/prisma/   # Prisma client output (gitignored)
+├── .env                    # DATABASE_URL, JWT_SECRET, PORT (gitignored)
+├── package.json
+└── tsconfig.json
+```
 
 ## Environment & Configuration
 
-- `.env*` files are gitignored at both the root and `client/kanban-board-client/` levels.
+- `.env*` files are gitignored at root, `client/kanban-board-client/`, and `server/` levels.
+- Required backend env vars: `DATABASE_URL`, `JWT_SECRET`; optional: `PORT` (default 4000).
 - The frontend `LayoutProps` type used in `src/app/layout.tsx` comes from Next.js 16's type system — do not shadow it.
+- The server uses Prisma 7's driver-adapter pattern — import the client from `src/generated/prisma/client` and pass a `PrismaPg` adapter to `new PrismaClient({ adapter })`. Do not use the legacy `PrismaClient` constructor without an adapter.
 
 ## Testing
 
