@@ -17,16 +17,18 @@ Mini Kanban Board/
 └── specs.md                     # Top-level spec summary
 ```
 
-**Important:** The `client/kanban-board-client/` directory is a separate Git repository (own `.git`). The `server/` directory contains the implemented backend (auth routes, health check, Prisma schema, JWT middleware).
+**Important:** The `client/kanban-board-client/` directory is a separate Git repository (own `.git`). The `server/` directory contains the implemented backend organized as a **Modular MVC** layout (per-feature modules + a `common/` cross-cutting layer) on native ES Modules.
 
 **Note:** Docker is intentionally not used in this project. There is no `docker-compose.yml` or `Dockerfile` — run the database, backend, and frontend directly on the host.
 
 ## Tech Stack
 
 - **Frontend:** Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS v4
-- **Backend:** Node.js + Express 5 + TypeScript
+- **Backend:** Node.js + Express 5 + TypeScript (ES Modules, Modular MVC layout)
 - **Database:** PostgreSQL + Prisma 7 (with `@prisma/adapter-pg` driver adapter)
 - **Auth:** JWT tokens (`jsonwebtoken`) + bcrypt password hashing (`bcryptjs`)
+- **Validation:** `zod` schemas per feature module + a generic `validate()` middleware
+- **Dev runner:** `tsx` (ESM-compatible TypeScript runner with watch mode)
 - **Package manager:** npm
 - **No Docker / containers** — services run directly on the host
 
@@ -55,16 +57,16 @@ The project uses Tailwind CSS v4 with the `@tailwindcss/postcss` package — con
 
 ## Backend Development
 
-The backend lives at `server/` and is already scaffolded with Phase 1 complete.
+The backend lives at `server/` and is organized as a **Modular MVC** layout on native ES Modules. Phase 1 is complete.
 
 ```bash
 cd server
 
 # Development
-npm run dev          # Start Express with ts-node-dev (auto-reload) on port 4000
+npm run dev          # Start Express with tsx watch (auto-reload) on port 4000
 
 # Build & deploy
-npm run build        # Compile TypeScript to dist/
+npm run build        # Compile TypeScript to dist/ (emits real ESM)
 npm start            # Run compiled output (node dist/index.js)
 
 # Type checking & Prisma
@@ -75,13 +77,16 @@ npm run prisma:studio
 ```
 
 **Stack:**
-- Express 5 with TypeScript (target ES2022, commonjs, strict mode)
+- Express 5 with TypeScript (target ES2022, **module: NodeNext**, strict mode, `verbatimModuleSyntax: true`)
+- Native **ES Modules** (`"type": "module"` in `package.json`); all relative imports use `.js` extensions even when the source is `.ts`
 - Prisma 7 client generated to `src/generated/prisma/` (uses `@prisma/adapter-pg` driver adapter — required by Prisma 7)
+- Validation: **`zod`** schemas in each feature module, run via a generic `validate(schema)` middleware
+- Dev runner: **`tsx`** (replaces `ts-node-dev` for ESM compatibility)
 - Auth: `POST /api/auth/register`, `POST /api/auth/login` → returns signed JWT
 - Middleware: `authMiddleware` (attaches `req.user`) and `requireAuth` (rejects unauthenticated)
 - Health: `GET /health`
 
-**Layout:**
+**Layout (Modular MVC):**
 ```
 server/
 ├── prisma/
@@ -89,23 +94,41 @@ server/
 │   └── migrations/         # Generated SQL migrations
 ├── src/
 │   ├── index.ts            # Entry point — validates env, connects DB, starts server
-│   ├── app.ts              # Express app factory (helmet, cors, json, routes)
-│   ├── config/             # Env validation & config object
-│   ├── lib/prisma.ts       # Shared Prisma client (hot-reload safe)
-│   ├── routes/             # auth.routes.ts, health.routes.ts
-│   ├── middleware/         # auth.middleware.ts
+│   ├── app.ts              # Express app factory (helmet, cors, json, mounts modules, error mw)
+│   ├── config/
+│   │   └── env.ts          # Zod-validated env (config + validateEnv)
+│   ├── lib/prisma.ts       # Shared Prisma client (hot-reload safe singleton)
+│   ├── common/             # Cross-cutting layer — no business logic
+│   │   ├── errors/         # HttpError class + central errorMiddleware
+│   │   ├── middleware/     # auth.middleware.ts (authMiddleware + requireAuth)
+│   │   ├── utils/          # asyncHandler (forwards rejections to error mw)
+│   │   ├── validators/     # validate.middleware.ts (generic zod runner)
+│   │   └── types/          # express.d.ts (global Request.user augmentation)
+│   ├── modules/            # One folder per feature
+│   │   ├── auth/           # auth.controller, auth.service, auth.validation, auth.routes, index
+│   │   └── health/         # health.controller, health.service, health.routes, index
 │   └── generated/prisma/   # Prisma client output (gitignored)
-├── .env                    # DATABASE_URL, JWT_SECRET, PORT (gitignored)
+├── .env                    # DATABASE_URL, JWT_SECRET, PORT, BCRYPT_SALT_ROUNDS, JWT_EXPIRES_IN (gitignored)
 ├── package.json
 └── tsconfig.json
 ```
 
+**Adding a new feature module** — create `src/modules/<name>/` with:
+- `<name>.controller.ts` — HTTP I/O only (read `req`, call service, write `res`)
+- `<name>.service.ts` — business logic (DB, hashing, external calls)
+- `<name>.validation.ts` — `zod` schemas + inferred input types
+- `<name>.routes.ts` — `Router` that wires `validate(schema) → asyncHandler(controller.fn)`
+- `index.ts` — barrel: `export { default as <name>Router } from "./<name>.routes.js"`
+
+Then mount it in `src/app.ts` (e.g. `app.use("/api/<name>", <name>Router)`) and add the new env vars (if any) to the `EnvSchema` in `src/config/env.ts`. Throw `HttpError(status, message)` from the service to surface domain errors through the central error middleware.
+
 ## Environment & Configuration
 
 - `.env*` files are gitignored at root, `client/kanban-board-client/`, and `server/` levels.
-- Required backend env vars: `DATABASE_URL`, `JWT_SECRET`; optional: `PORT` (default 4000).
+- Required backend env vars: `DATABASE_URL`, `JWT_SECRET`. Optional: `PORT` (default 4000), `BCRYPT_SALT_ROUNDS` (default 12), `JWT_EXPIRES_IN` (default `7d`). The schema lives in `src/config/env.ts` (zod) — add new keys there, then read them off the typed `config` object.
 - The frontend `LayoutProps` type used in `src/app/layout.tsx` comes from Next.js 16's type system — do not shadow it.
-- The server uses Prisma 7's driver-adapter pattern — import the client from `src/generated/prisma/client` and pass a `PrismaPg` adapter to `new PrismaClient({ adapter })`. Do not use the legacy `PrismaClient` constructor without an adapter.
+- The server uses Prisma 7's driver-adapter pattern — import the client from `src/generated/prisma/client.js` (note the `.js` extension — required by `module: NodeNext`) and pass a `PrismaPg` adapter to `new PrismaClient({ adapter })`. Do not use the legacy `PrismaClient` constructor without an adapter.
+- **ESM import rules** for the backend: every relative import must use the `.js` extension, and type-only imports must use `import type { ... }` (`verbatimModuleSyntax: true`). The on-disk source files are still `.ts`; only the import specifier changes.
 
 ## Testing
 

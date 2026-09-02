@@ -1,6 +1,6 @@
-import { PrismaClient } from "../generated/prisma/client";
+import { PrismaClient } from "../generated/prisma/client.js";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { config } from "../config";
+import { config } from "../config/env.js";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
@@ -10,7 +10,7 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
  * In development, reuse the same client across hot-reloads to prevent
  * creating excessive database connections.
  */
-const adapter = new PrismaPg({ connectionString: config.databaseUrl });
+const adapter = new PrismaPg({ connectionString: config.DATABASE_URL });
 
 export const prisma =
   globalForPrisma.prisma ||

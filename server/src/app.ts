@@ -1,19 +1,21 @@
-import express, { Application } from "express";
+import express, { type Application } from "express";
 import cors from "cors";
 import helmet from "helmet";
-import authRoutes from "./routes/auth.routes";
-import healthRouter from "./routes/health.routes";
-import { authMiddleware } from "./middleware/auth.middleware";
+import { errorMiddleware } from "./common/errors/error.middleware.js";
+import { authMiddleware } from "./common/middleware/auth.middleware.js";
+import { authRouter } from "./modules/auth/index.js";
+import { healthRouter } from "./modules/health/index.js";
 
 /**
  * Creates and configures the Express application.
  *
  * Middleware:
- *  - helmet: sets security-related HTTP headers
- *  - cors:   enables cross-origin requests
- *  - express.json(): parses JSON request bodies
- *  - authMiddleware: attaches decoded user to req.user (non-blocking — routes
- *    use requireAuth to enforce it)
+ *  - helmet:                sets security-related HTTP headers
+ *  - cors:                  enables cross-origin requests
+ *  - express.json():        parses JSON request bodies
+ *  - authMiddleware:        attaches decoded user to req.user (non-blocking;
+ *                           protected routes use requireAuth to enforce it)
+ *  - errorMiddleware:       LAST — catches anything asyncHandler forwarded
  *
  * @returns A configured Express Application instance.
  */
@@ -26,12 +28,14 @@ function createApp(): Application {
   app.use(express.json());
 
   // Authentication middleware — attaches req.user when a valid JWT is present.
-  // Protected routes use requireAuth() to reject unauthenticated requests.
   app.use(authMiddleware);
 
-  // Routes
+  // Feature module routes
   app.use("/health", healthRouter);
-  app.use("/api/auth", authRoutes);
+  app.use("/api/auth", authRouter);
+
+  // Central error handler MUST be registered last.
+  app.use(errorMiddleware);
 
   return app;
 }
