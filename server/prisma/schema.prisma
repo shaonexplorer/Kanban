@@ -20,6 +20,10 @@ model User {
   boards       Board[]
   // Boards this user has been invited to / collaborated on
   boardUsers   BoardUser[]
+  // Invitations this user has sent to other users
+  invitationsSent     BoardInvitation[] @relation("InvitationsSent")
+  // Invitations this user has received from board owners
+  invitationsReceived BoardInvitation[] @relation("InvitationsReceived")
 }
 
 /// A Kanban board — the top-level container for columns and tasks.
@@ -28,18 +32,23 @@ model Board {
   title      String
   ownerId    String
   createdAt  DateTime    @default(now())
+  // Soft-delete timestamp; null = active, non-null = tombstoned
+  deletedAt  DateTime?
   owner      User        @relation(fields: [ownerId], references: [id])
   columns    Column[]
   sharedWith BoardUser[]
+  invitations BoardInvitation[]
 }
 
 /// Join table representing a user's collaboration access to a board.
 model BoardUser {
-  id      String @id @default(uuid())
-  boardId String
-  userId  String
-  board   Board  @relation(fields: [boardId], references: [id])
-  user    User   @relation(fields: [userId], references: [id])
+  id       String   @id @default(uuid())
+  boardId  String
+  userId   String
+  // When the user joined the board — used to sort the members list
+  joinedAt DateTime @default(now())
+  board    Board    @relation(fields: [boardId], references: [id])
+  user     User     @relation(fields: [userId], references: [id])
 
   @@unique([boardId, userId])
 }
@@ -63,4 +72,32 @@ model Task {
   position    Int      // Ordering within the column
   createdAt   DateTime @default(now())
   column      Column   @relation(fields: [columnId], references: [id])
+}
+
+/// Status of a board-ownership invitation. PENDING is the only state in which
+/// an invitee can accept; the other terminal states are write-once.
+enum BoardInvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  REVOKED
+}
+
+/// A pending (or terminal) invitation for a user to collaborate on a board.
+/// The invitee must already be a registered user — see Phase 2 Plan §4.
+model BoardInvitation {
+  id        String                @id @default(uuid())
+  boardId   String
+  inviterId String
+  inviteeId String
+  status    BoardInvitationStatus @default(PENDING)
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+
+  board   Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  inviter User  @relation("InvitationsSent",     fields: [inviterId], references: [id])
+  invitee User  @relation("InvitationsReceived", fields: [inviteeId], references: [id])
+
+  @@index([inviteeId, status])
+  @@index([boardId, status])
 }
