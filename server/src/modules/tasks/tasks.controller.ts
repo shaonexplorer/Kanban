@@ -1,8 +1,10 @@
 import type { Request, Response } from "express";
 import * as tasksService from "./tasks.service.js";
 import type {
+  ColumnAndTaskIdParam,
   ColumnScopedTaskParam,
   CreateTaskInput,
+  MoveTaskInput,
   TaskIdParam,
   UpdateTaskInput,
 } from "./tasks.validation.js";
@@ -88,4 +90,25 @@ export async function deleteTask(req: Request, res: Response): Promise<void> {
 
   await tasksService.deleteTask(userId, taskId);
   res.status(204).send();
+}
+
+// ---------------------------------------------------------------------------
+// Move — Phase 4 Step 3
+// ---------------------------------------------------------------------------
+
+/**
+ * POST /api/columns/:columnId/tasks/:taskId/move — move a task to a
+ * new position, either within the same column (reorder) or across
+ * columns on the same board. Cross-board moves are rejected with 403.
+ *
+ * Returns 200 with the moved task (full shape:
+ * `{ id, title, description, columnId, position, createdAt }`).
+ */
+export async function moveTask(req: Request, res: Response): Promise<void> {
+  const { id: userId } = req.user!;
+  const { taskId } = req.params as ColumnAndTaskIdParam;
+  const input = req.body as MoveTaskInput;
+
+  const moved = await tasksService.moveTask(userId, taskId, input);
+  res.status(200).json(moved);
 }

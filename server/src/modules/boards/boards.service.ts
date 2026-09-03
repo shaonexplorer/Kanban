@@ -38,12 +38,12 @@ export interface BoardDetail {
   columns: Array<{
     id: string;
     title: string;
-    position: number;
+    position: string;
     tasks: Array<{
       id: string;
       title: string;
       description: string | null;
-      position: number;
+      position: string;
       createdAt: Date;
     }>;
   }>;

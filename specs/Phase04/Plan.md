@@ -497,14 +497,14 @@ the full checklist.
 
 | #   | Task                                                                       | Estimated Effort | Status         |
 | --- | -------------------------------------------------------------------------- | ---------------- | -------------- |
-| 1   | Schema migration: `position Int → String` + backfill (Step 1)              | 45 min           | ⬜ To do       |
-| 2   | `lexoPosition` helper + smoke script (Step 2)                              | 60 min           | ⬜ To do       |
-| 3   | `tasks` module: move endpoint (Step 3)                                     | 90 min           | ⬜ To do       |
-| 4   | `columns` module: single-column move endpoint (Step 4)                     | 45 min           | ⬜ To do       |
+| 1   | Schema migration: `position Int → String` + backfill (Step 1)              | 45 min           | ✅ Done         |
+| 2   | `lexoPosition` helper + smoke script (Step 2)                              | 60 min           | ✅ Done         |
+| 3   | `tasks` module: move endpoint (Step 3)                                     | 90 min           | ✅ Done         |
+| 4   | `columns` module: single-column move endpoint (Step 4)                     | 45 min           | ✅ Done         |
 | 5   | Frontend deps + `QueryClientProvider` + AuthContext (Step 5, base)         | 45 min           | ⬜ To do       |
 | 6   | Frontend board view + dnd-kit wiring (Step 5)                              | 180 min          | ⬜ To do       |
 | 7   | End-to-end manual verification, both APIs and DnD UI (Step 7)              | 90 min           | ⬜ To do       |
-|     | **Total**                                                                  | **~9.5 hours**   | **Phase 4 to do** |
+|     | **Total**                                                                  | **~9.5 hours**   | **Steps 1–4 done; Steps 5–7 to do** |
 
 ---
 
