@@ -59,7 +59,7 @@ The project uses Tailwind CSS v4 with the `@tailwindcss/postcss` package — con
 
 ## Backend Development
 
-The backend lives at `server/` and is organized as a **Modular MVC** layout on native ES Modules. **Phase 1 (Foundation) is complete; Phase 2 (Boards & Access Control) is in progress** — the Prisma schema includes `Board.deletedAt`, `BoardUser.joinedAt`, and a `BoardInvitation` model (with `BoardInvitationStatus` enum), and the access-control middlewares (`loadBoard`, `requireBoardAccess`, `requireBoardOwner`) live in `src/common/middleware/access-control.middleware.ts`. The `boards` and `board-invitations` modules land in the next steps.
+The backend lives at `server/` and is organized as a **Modular MVC** layout on native ES Modules. **Phase 1 (Foundation) is complete; Phase 2 (Boards & Access Control) is in progress** — the Prisma schema includes `Board.deletedAt`, `BoardUser.joinedAt`, and a `BoardInvitation` model (with `BoardInvitationStatus` enum), and the access-control middlewares (`loadBoard`, `requireBoardAccess`, `requireBoardOwner`) live in `src/common/middleware/access-control.middleware.ts`. The `boards` module (CRUD + member management + owner-driven invitations) is implemented in `src/modules/boards/`. The `board-invitations` module (list / accept / decline invitations addressed to the caller) lands in the next step.
 
 ```bash
 cd server
@@ -82,10 +82,11 @@ npm run prisma:studio
 - Express 5 with TypeScript (target ES2022, **module: NodeNext**, strict mode, `verbatimModuleSyntax: true`)
 - Native **ES Modules** (`"type": "module"` in `package.json`); all relative imports use `.js` extensions even when the source is `.ts`
 - Prisma 7 client generated to `src/generated/prisma/` (uses `@prisma/adapter-pg` driver adapter — required by Prisma 7)
-- Validation: **`zod`** schemas in each feature module, run via a generic `validate(schema)` middleware
+- Validation: **`zod`** schemas in each feature module, run via a generic `validate(schema, source?)` middleware (`source` defaults to `"body"`; pass `"params"` to validate path segments or `"query"` for query strings — needed for UUID `:id` params)
 - Dev runner: **`tsx`** (replaces `ts-node-dev` for ESM compatibility)
 - Auth: `POST /api/auth/register`, `POST /api/auth/login` → returns signed JWT
-- Middleware: `authMiddleware` (attaches `req.user`) and `requireAuth` (rejects unauthenticated); `loadBoard` + `requireBoardAccess` + `requireBoardOwner` in `access-control.middleware.ts` (Phase 2) — wire them as `requireAuth → loadBoard → requireBoardAccess|requireBoardOwner` on every `:id` board route
+- Boards: `GET/POST /api/boards` (list/create), `GET/PATCH/DELETE /api/boards/:id` (detail/rename/soft-delete), `GET /api/boards/:id/members` (list members), `POST /api/boards/:id/members` (owner invites a registered user by `userId` or `email`), `DELETE /api/boards/:id/members/:userId` (owner removes a collaborator). All routes require `requireAuth`; `:id` routes chain `loadBoard` then `requireBoardAccess` (read paths) or `requireBoardOwner` (mutations); soft-deleted boards are treated as 404.
+- Middleware: `authMiddleware` (attaches `req.user`) and `requireAuth` (rejects unauthenticated); `loadBoard` + `requireBoardAccess` + `requireBoardOwner` in `access-control.middleware.ts` — wire them as `requireAuth → loadBoard → requireBoardAccess|requireBoardOwner` on every `:id` board route
 - Health: `GET /health` — returns 200 `{status: "ok", timestamp, db: "up"}` when the DB responds to a `SELECT 1`, or 503 `{status: "degraded", timestamp, db: "down", error}` when it doesn't (useful for orchestrators/liveness probes)
 
 **Layout (Modular MVC):**
@@ -102,14 +103,14 @@ server/
 │   ├── lib/prisma.ts       # Shared Prisma client (hot-reload safe singleton)
 │   ├── common/             # Cross-cutting layer — no business logic
 │   │   ├── errors/         # HttpError class + central errorMiddleware
-│   │   ├── middleware/     # auth.middleware.ts (authMiddleware + requireAuth), access-control.middleware.ts (loadBoard, requireBoardAccess, requireBoardOwner) — Phase 2 in progress
+│   │   ├── middleware/     # auth.middleware.ts (authMiddleware + requireAuth), access-control.middleware.ts (loadBoard, requireBoardAccess, requireBoardOwner)
 │   │   ├── utils/          # asyncHandler (forwards rejections to error mw)
-│   │   ├── validators/     # validate.middleware.ts (generic zod runner)
+│   │   ├── validators/     # validate.middleware.ts (generic zod runner; supports source: "body" | "params" | "query")
 │   │   └── types/          # express.d.ts (global Request.user + Request.board augmentation)
 │   ├── modules/            # One folder per feature
 │   │   ├── auth/                    # auth.controller, auth.service, auth.validation, auth.routes, index
-│   │   ├── boards/                  # Phase 2 (planned): board CRUD + member management
-│   │   ├── board-invitations/       # Phase 2 (planned): list / accept / decline invitations
+│   │   ├── boards/                  # boards.controller, boards.service, boards.validation, boards.routes, index — CRUD + members + invitations
+│   │   ├── board-invitations/       # Phase 2 (next): list / accept / decline invitations addressed to the caller
 │   │   └── health/                  # health.controller, health.service, health.routes, index
 │   └── generated/prisma/   # Prisma client output (gitignored)
 ├── .env                    # DATABASE_URL, JWT_SECRET, PORT, BCRYPT_SALT_ROUNDS, JWT_EXPIRES_IN (gitignored)
