@@ -71,7 +71,7 @@ model Task {
   columnId    String
   position    Int      // Ordering within the column
   createdAt   DateTime @default(now())
-  column      Column   @relation(fields: [columnId], references: [id])
+  column      Column   @relation(fields: [columnId], references: [id], onDelete: Cascade)
 }
 
 /// Status of a board-ownership invitation. PENDING is the only state in which
