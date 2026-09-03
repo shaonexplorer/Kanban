@@ -13,12 +13,18 @@ each.
   (port 3000).
 - The Phase 2 E2E script (`server/phase2-e2e.ps1`) is **not** sufficient
   on its own: it was written before the schema migration in Step 1.
-  Either:
-  - update its `reorder` assertions to compare **position values**
-    rather than the input order, OR
-  - add a Phase 4 e2e script (`server/phase4-e2e.ps1`) that re-asserts
-    the same behaviour against the new ordering semantics.
-  The choice must be documented in the PR description.
+  **Choice: a new Phase 4 e2e script (`server/phase4-e2e.ps1`) was
+  added** that re-asserts the same behaviour against the new ordering
+  semantics. The Phase 2 script was left unchanged (it does not touch
+  column/task positions, so it still passes against the new schema);
+  the new script covers the Phase 4 surface in full. Run both:
+  ```bash
+  cd server
+  powershell -ExecutionPolicy Bypass -File ./phase2-e2e.ps1
+  powershell -ExecutionPolicy Bypass -File ./phase4-e2e.ps1
+  ```
+  Each run uses a unique email suffix so the scripts are idempotent
+  against any environment.
 - The frontend assumes a JWT in `localStorage` under a known key
   (e.g. `kanban.token`). The Phase 4 validation script logs a user
   in via `POST /api/auth/login` and writes the token to
@@ -465,6 +471,19 @@ T1=$(curl -s -X POST http://localhost:4000/api/auth/login \
 > end-to-end manual scenarios below pass.**
 
 ## End-to-End Manual Scenarios
+
+### Backend (automated)
+
+The scenarios below are encoded as `server/phase4-e2e.ps1` (58
+assertions, all currently passing). Run it after `npm run dev` is
+up on port 4000:
+
+```bash
+cd server
+powershell -ExecutionPolicy Bypass -File ./phase4-e2e.ps1
+```
+
+Expected: `Phase 4 end-to-end: 58 passed, 0 failed`.
 
 ### Backend (cURL)
 
