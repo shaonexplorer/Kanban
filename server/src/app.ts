@@ -4,6 +4,7 @@ import helmet from "helmet";
 import { errorMiddleware } from "./common/errors/error.middleware.js";
 import { authMiddleware } from "./common/middleware/auth.middleware.js";
 import { authRouter } from "./modules/auth/index.js";
+import { boardInvitationsRouter } from "./modules/board-invitations/index.js";
 import { boardsRouter } from "./modules/boards/index.js";
 import { healthRouter } from "./modules/health/index.js";
 
@@ -35,6 +36,7 @@ function createApp(): Application {
   app.use("/health", healthRouter);
   app.use("/api/auth", authRouter);
   app.use("/api/boards", boardsRouter);
+  app.use("/api/board-invitations", boardInvitationsRouter);
 
   // Central error handler MUST be registered last.
   app.use(errorMiddleware);

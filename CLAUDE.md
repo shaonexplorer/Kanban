@@ -8,13 +8,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Mini Kanban Board/
 ├── client/
 │   └── kanban-board-client/    # Next.js 16 + React 19 + TypeScript + Tailwind CSS v4
-├── server/                      # Backend (Node.js + Express + TypeScript + Prisma) — Phase 1 complete
+├── server/                      # Backend (Node.js + Express + TypeScript + Prisma) — Phase 1 & Phase 2 complete
 ├── specs/                       # Project specifications and documentation
 │   ├── Mission.md              # Project purpose and success criteria
 │   ├── Techstack.md            # Tech stack decisions and planned libraries
 │   ├── Roadmap.md             # Phased implementation roadmap
 │   ├── Phase01/               # Phase 1 deliverables (Plan, Requirements, Validation) — Foundation
-│   └── Phase02/               # Phase 2 deliverables (Plan, Requirements, Validation) — Boards & Access Control (in progress)
+│   └── Phase02/               # Phase 2 deliverables (Plan, Requirements, Validation) — Boards & Access Control
 └── specs.md                     # Top-level spec summary
 ```
 
@@ -59,7 +59,7 @@ The project uses Tailwind CSS v4 with the `@tailwindcss/postcss` package — con
 
 ## Backend Development
 
-The backend lives at `server/` and is organized as a **Modular MVC** layout on native ES Modules. **Phase 1 (Foundation) is complete; Phase 2 (Boards & Access Control) is in progress** — the Prisma schema includes `Board.deletedAt`, `BoardUser.joinedAt`, and a `BoardInvitation` model (with `BoardInvitationStatus` enum), and the access-control middlewares (`loadBoard`, `requireBoardAccess`, `requireBoardOwner`) live in `src/common/middleware/access-control.middleware.ts`. The `boards` module (CRUD + member management + owner-driven invitations) is implemented in `src/modules/boards/`. The `board-invitations` module (list / accept / decline invitations addressed to the caller) lands in the next step.
+The backend lives at `server/` and is organized as a **Modular MVC** layout on native ES Modules. **Phase 1 (Foundation) and Phase 2 (Boards & Access Control) are complete** — the Prisma schema includes `Board.deletedAt`, `BoardUser.joinedAt`, and a `BoardInvitation` model (with `BoardInvitationStatus` enum), and the access-control middlewares (`loadBoard`, `requireBoardAccess`, `requireBoardOwner`) live in `src/common/middleware/access-control.middleware.ts`. The `boards` module (CRUD + member management + owner-driven invitations) is implemented in `src/modules/boards/`, and the `board-invitations` module (list / accept / decline invitations addressed to the caller) is implemented in `src/modules/board-invitations/`.
 
 ```bash
 cd server
@@ -86,6 +86,7 @@ npm run prisma:studio
 - Dev runner: **`tsx`** (replaces `ts-node-dev` for ESM compatibility)
 - Auth: `POST /api/auth/register`, `POST /api/auth/login` → returns signed JWT
 - Boards: `GET/POST /api/boards` (list/create), `GET/PATCH/DELETE /api/boards/:id` (detail/rename/soft-delete), `GET /api/boards/:id/members` (list members), `POST /api/boards/:id/members` (owner invites a registered user by `userId` or `email`), `DELETE /api/boards/:id/members/:userId` (owner removes a collaborator). All routes require `requireAuth`; `:id` routes chain `loadBoard` then `requireBoardAccess` (read paths) or `requireBoardOwner` (mutations); soft-deleted boards are treated as 404.
+- Board invitations: `GET /api/board-invitations` (caller's PENDING invites, joined with `boardTitle` + `inviterEmail`, newest first), `POST /api/board-invitations/:id/accept` (atomic `prisma.$transaction` that idempotently upserts a `BoardUser` row and flips the invitation to `ACCEPTED`), `POST /api/board-invitations/:id/decline` (single-write `DECLINED`). All routes require `requireAuth`; per-invitation actions verify `inviteeId === req.user.id` and reject with 403 / 404 / 409 (board soft-deleted, not addressee, or no longer PENDING).
 - Middleware: `authMiddleware` (attaches `req.user`) and `requireAuth` (rejects unauthenticated); `loadBoard` + `requireBoardAccess` + `requireBoardOwner` in `access-control.middleware.ts` — wire them as `requireAuth → loadBoard → requireBoardAccess|requireBoardOwner` on every `:id` board route
 - Health: `GET /health` — returns 200 `{status: "ok", timestamp, db: "up"}` when the DB responds to a `SELECT 1`, or 503 `{status: "degraded", timestamp, db: "down", error}` when it doesn't (useful for orchestrators/liveness probes)
 
@@ -110,7 +111,7 @@ server/
 │   ├── modules/            # One folder per feature
 │   │   ├── auth/                    # auth.controller, auth.service, auth.validation, auth.routes, index
 │   │   ├── boards/                  # boards.controller, boards.service, boards.validation, boards.routes, index — CRUD + members + invitations
-│   │   ├── board-invitations/       # Phase 2 (next): list / accept / decline invitations addressed to the caller
+│   │   ├── board-invitations/       # board-invitations.controller, board-invitations.service, board-invitations.validation, board-invitations.routes, index — list / accept / decline invitations addressed to the caller
 │   │   └── health/                  # health.controller, health.service, health.routes, index
 │   └── generated/prisma/   # Prisma client output (gitignored)
 ├── .env                    # DATABASE_URL, JWT_SECRET, PORT, BCRYPT_SALT_ROUNDS, JWT_EXPIRES_IN (gitignored)
