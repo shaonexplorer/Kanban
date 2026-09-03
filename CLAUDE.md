@@ -212,6 +212,11 @@ No automated test framework is configured yet. For now:
 - `specs/Phase03/` — Phase 3 detailed deliverables (Plan, Requirements, Validation) — Columns & Tasks (Steps 1–4 done: schema evolution + access-control loaders + columns module + tasks module; nested `GET /api/boards/:id` shape also populated)
 - `specs/Phase04/` — Phase 4 detailed deliverables (Plan, Requirements, Validation) — Ordering & Task Movement (Steps 1–7 done: `position Int → String` migration on `Column` and `Task`; `lexoPosition` helper; move endpoints for tasks and columns; Next.js board view with `@dnd-kit` + TanStack Query; `server/phase4-e2e.ps1` (58 assertions); `server/phase4-step7-e2e.ps1` (32 assertions); `Validation.md` Summary Checklist ✅ everywhere; Step 7 manual-verification checklist; Phase 4 closed out)
 
+## Design System Guidelines
+
+- Prioritize using the tokens defined in `@design/design.md` for layout, colors, and spacing.
+- Use the Stitch MCP server to inspect visual assets, layouts, and DOM hierarchy before writing UI code.
+
 ## Development Workflow & Skills
 
 - **Up-to-date library documentation:** When referencing or implementing with a library, framework, SDK, API, CLI tool, or cloud service (e.g., Next.js, React, Tailwind CSS, Prisma, Express), use the `find-docs` skill (backed by Context7 / `ctx7`) to fetch current docs rather than relying on training data. API syntax, configuration options, and version-specific behavior can change rapidly.
