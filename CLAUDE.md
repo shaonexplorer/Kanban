@@ -28,6 +28,7 @@ Mini Kanban Board/
 - **Backend:** Node.js + Express 5 + TypeScript (ES Modules, Modular MVC layout)
 - **Database:** PostgreSQL + Prisma 7 (with `@prisma/adapter-pg` driver adapter)
 - **Auth:** JWT tokens (`jsonwebtoken`) + bcrypt password hashing (`bcryptjs`)
+- **Access control (Phase 2):** `loadBoard` + `requireBoardAccess` + `requireBoardOwner` middlewares in `server/src/common/middleware/access-control.middleware.ts`. `loadBoard` reads the board id from `req.params` (or `req.body`) and attaches the non-deleted `Board` to `req.board`; the two `require*` middlewares enforce owner-only vs. owner-or-member access and throw `HttpError(403, "Forbidden")` otherwise. Reusable in Phase 3+ for column/task scopes.
 - **Validation:** `zod` schemas per feature module + a generic `validate()` middleware
 - **Dev runner:** `tsx` (ESM-compatible TypeScript runner with watch mode)
 - **Package manager:** npm
@@ -58,7 +59,7 @@ The project uses Tailwind CSS v4 with the `@tailwindcss/postcss` package — con
 
 ## Backend Development
 
-The backend lives at `server/` and is organized as a **Modular MVC** layout on native ES Modules. **Phase 1 (Foundation) is complete; Phase 2 (Boards & Access Control) is in progress** — the Prisma schema now includes `Board.deletedAt`, `BoardUser.joinedAt`, and a new `BoardInvitation` model (with `BoardInvitationStatus` enum). Routes for boards and invitations land in the next steps.
+The backend lives at `server/` and is organized as a **Modular MVC** layout on native ES Modules. **Phase 1 (Foundation) is complete; Phase 2 (Boards & Access Control) is in progress** — the Prisma schema includes `Board.deletedAt`, `BoardUser.joinedAt`, and a `BoardInvitation` model (with `BoardInvitationStatus` enum), and the access-control middlewares (`loadBoard`, `requireBoardAccess`, `requireBoardOwner`) live in `src/common/middleware/access-control.middleware.ts`. The `boards` and `board-invitations` modules land in the next steps.
 
 ```bash
 cd server
@@ -84,7 +85,7 @@ npm run prisma:studio
 - Validation: **`zod`** schemas in each feature module, run via a generic `validate(schema)` middleware
 - Dev runner: **`tsx`** (replaces `ts-node-dev` for ESM compatibility)
 - Auth: `POST /api/auth/register`, `POST /api/auth/login` → returns signed JWT
-- Middleware: `authMiddleware` (attaches `req.user`) and `requireAuth` (rejects unauthenticated)
+- Middleware: `authMiddleware` (attaches `req.user`) and `requireAuth` (rejects unauthenticated); `loadBoard` + `requireBoardAccess` + `requireBoardOwner` in `access-control.middleware.ts` (Phase 2) — wire them as `requireAuth → loadBoard → requireBoardAccess|requireBoardOwner` on every `:id` board route
 - Health: `GET /health` — returns 200 `{status: "ok", timestamp, db: "up"}` when the DB responds to a `SELECT 1`, or 503 `{status: "degraded", timestamp, db: "down", error}` when it doesn't (useful for orchestrators/liveness probes)
 
 **Layout (Modular MVC):**
@@ -101,13 +102,15 @@ server/
 │   ├── lib/prisma.ts       # Shared Prisma client (hot-reload safe singleton)
 │   ├── common/             # Cross-cutting layer — no business logic
 │   │   ├── errors/         # HttpError class + central errorMiddleware
-│   │   ├── middleware/     # auth.middleware.ts (authMiddleware + requireAuth), access-control.middleware.ts (loadBoard, requireBoardAccess, requireBoardOwner) — Phase 2
+│   │   ├── middleware/     # auth.middleware.ts (authMiddleware + requireAuth), access-control.middleware.ts (loadBoard, requireBoardAccess, requireBoardOwner) — Phase 2 in progress
 │   │   ├── utils/          # asyncHandler (forwards rejections to error mw)
 │   │   ├── validators/     # validate.middleware.ts (generic zod runner)
-│   │   └── types/          # express.d.ts (global Request.user augmentation)
+│   │   └── types/          # express.d.ts (global Request.user + Request.board augmentation)
 │   ├── modules/            # One folder per feature
-│   │   ├── auth/           # auth.controller, auth.service, auth.validation, auth.routes, index
-│   │   └── health/         # health.controller, health.service, health.routes, index
+│   │   ├── auth/                    # auth.controller, auth.service, auth.validation, auth.routes, index
+│   │   ├── boards/                  # Phase 2 (planned): board CRUD + member management
+│   │   ├── board-invitations/       # Phase 2 (planned): list / accept / decline invitations
+│   │   └── health/                  # health.controller, health.service, health.routes, index
 │   └── generated/prisma/   # Prisma client output (gitignored)
 ├── .env                    # DATABASE_URL, JWT_SECRET, PORT, BCRYPT_SALT_ROUNDS, JWT_EXPIRES_IN (gitignored)
 ├── package.json
@@ -118,10 +121,10 @@ server/
 - `<name>.controller.ts` — HTTP I/O only (read `req`, call service, write `res`)
 - `<name>.service.ts` — business logic (DB, hashing, external calls)
 - `<name>.validation.ts` — `zod` schemas + inferred input types
-- `<name>.routes.ts` — `Router` that wires `validate(schema) → asyncHandler(controller.fn)`
+- `<name>.routes.ts` — `Router` that wires `validate(schema, "body" | "params") → [loadBoard → requireBoardAccess|requireBoardOwner →] asyncHandler(controller.fn)`
 - `index.ts` — barrel: `export { default as <name>Router } from "./<name>.routes.js"`
 
-Then mount it in `src/app.ts` (e.g. `app.use("/api/<name>", <name>Router)`) and add the new env vars (if any) to the `EnvSchema` in `src/config/env.ts`. Throw `HttpError(status, message)` from the service to surface domain errors through the central error middleware.
+Then mount it in `src/app.ts` (e.g. `app.use("/api/<name>", <name>Router)`) and add the new env vars (if any) to the `EnvSchema` in `src/config/env.ts`. Throw `HttpError(status, message)` from the service to surface domain errors through the central error middleware. On `:id` routes that resolve to a board-scoped resource, always use `loadBoard` (or its Phase 3 successors `loadColumn` / `loadTask`) to populate `req.board` before the authorization check — never re-query the board inside the controller.
 
 ## Environment & Configuration
 
