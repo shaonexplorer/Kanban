@@ -8,13 +8,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Mini Kanban Board/
 ├── client/
 │   └── kanban-board-client/    # Next.js 16 + React 19 + TypeScript + Tailwind CSS v4
-├── server/                      # Backend (Node.js + Express + TypeScript + Prisma) — Phase 1 & Phase 2 complete
+├── server/                      # Backend (Node.js + Express + TypeScript + Prisma) — Phase 1 & 2 complete; Phase 3 in progress (Step 1 done)
 ├── specs/                       # Project specifications and documentation
 │   ├── Mission.md              # Project purpose and success criteria
 │   ├── Techstack.md            # Tech stack decisions and planned libraries
 │   ├── Roadmap.md             # Phased implementation roadmap
 │   ├── Phase01/               # Phase 1 specs: Plan.md, Requirements.md, Validation.md — Foundation
-│   └── Phase02/               # Phase 2 specs: Plan.md, Requirements.md, Validation.md — Boards & Access Control
+│   ├── Phase02/               # Phase 2 specs: Plan.md, Requirements.md, Validation.md — Boards & Access Control
+│   └── Phase03/               # Phase 3 specs: Plan.md, Requirements.md, Validation.md — Columns & Tasks (Step 1 schema evolution done)
 └── specs.md                     # Top-level spec summary
 ```
 
@@ -59,7 +60,7 @@ The project uses Tailwind CSS v4 with the `@tailwindcss/postcss` package — con
 
 ## Backend Development
 
-The backend lives at `server/` and is organized as a **Modular MVC** layout on native ES Modules. **Phase 1 (Foundation) and Phase 2 (Boards & Access Control) are complete** — the Prisma schema includes `Board.deletedAt`, `BoardUser.joinedAt`, and a `BoardInvitation` model (with `BoardInvitationStatus` enum), and the access-control middlewares (`loadBoard`, `requireBoardAccess`, `requireBoardOwner`) live in `src/common/middleware/access-control.middleware.ts`. The `boards` module (CRUD + member management + owner-driven invitations) is implemented in `src/modules/boards/`, and the `board-invitations` module (list / accept / decline invitations addressed to the caller) is implemented in `src/modules/board-invitations/`.
+The backend lives at `server/` and is organized as a **Modular MVC** layout on native ES Modules. **Phase 1 (Foundation) and Phase 2 (Boards & Access Control) are complete.** **Phase 3 (Columns & Tasks) is in progress — Step 1 (schema evolution) is done** and adds `onDelete: Cascade` from `Task → Column` so `DELETE /api/columns/:id` cleans up its tasks atomically; `Column → Board` and `Board → BoardUser` remain `RESTRICT` (boards still soft-delete via `deletedAt`). The Prisma schema includes `Board.deletedAt`, `BoardUser.joinedAt`, and a `BoardInvitation` model (with `BoardInvitationStatus` enum), and the access-control middlewares (`loadBoard`, `requireBoardAccess`, `requireBoardOwner`) live in `src/common/middleware/access-control.middleware.ts`. The `boards` module (CRUD + member management + owner-driven invitations) is implemented in `src/modules/boards/`, and the `board-invitations` module (list / accept / decline invitations addressed to the caller) is implemented in `src/modules/board-invitations/`. The `columns` and `tasks` modules are not yet implemented — they land in Phase 3 Steps 3 & 4.
 
 ```bash
 cd server
@@ -155,6 +156,7 @@ No automated test framework is configured yet. For now:
 - `specs/Roadmap.md` — 5-phase implementation roadmap (Foundation → Boards & Access → Columns & Tasks → Ordering & Drag-and-Drop → Polish)
 - `specs/Phase01/` — Phase 1 detailed deliverables (Plan, Requirements, Validation)
 - `specs/Phase02/` — Phase 2 detailed deliverables (Plan, Requirements, Validation) — Boards & Access Control
+- `specs/Phase03/` — Phase 3 detailed deliverables (Plan, Requirements, Validation) — Columns & Tasks (Step 1 done)
 
 ## Development Workflow & Skills
 
