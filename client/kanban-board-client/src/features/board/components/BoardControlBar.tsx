@@ -1,47 +1,46 @@
 "use client";
 
 import { useState } from "react";
-import { Icon, type IconName } from "./Icon";
-import { UserAvatar } from "./UserAvatar";
+import { Icon } from "./Icon";
 
 export interface BoardControlBarProps {
   /** Called when the user clicks "New Task" and confirms a title. */
   onCreateTask: (args: { title: string }) => void;
   /** Disable the New Task button (e.g. while no columns exist). */
   canCreateTask?: boolean;
+  /** Open the "Share Board" modal. Wired by `BoardView` to the
+   * `ShareBoardModal` component from the Stitch share screen. */
+  onOpenShareModal?: () => void;
+  /** Open the "Create Board" right-side drawer. Wired by `BoardView`
+   * to the `CreateBoardDrawer` component from the Stitch share
+   * screen (the New Board control is a global affordance — it
+   * always opens the create flow, even from a board view). */
+  onOpenCreateBoard?: () => void;
 }
-
-type ViewMode = "board" | "list" | "timeline";
-
-const viewModes: { key: ViewMode; label: string; icon: IconName }[] = [
-  { key: "board", label: "Board", icon: "view_kanban" },
-  { key: "list", label: "List", icon: "format_list_bulleted" },
-  { key: "timeline", label: "Timeline", icon: "calendar_month" },
-];
 
 /**
  * The trimmed Stitch sub-header that sits between the top bar and
- * the kanban canvas. Only the affordances that map to a real
- * affordance are kept:
+ * the kanban canvas. The visible affordances match the Stitch
+ * share.html control bar one-for-one:
  *
- *   - The sprint status pulse + "Sprint Active" label (honest
- *     placeholder text — we don't track sprints server-side).
- *   - The current-user facepile (real data from `useAuth()`).
- *   - The Invite button (no-op; collaborator invites are Phase 5).
- *   - The New Task button (active; prompts for a title and calls
- *     `onCreateTask`).
- *   - The Board / List / Timeline view-mode toggle (Board is
- *     active; List / Timeline are no-ops in this pass).
+ *   - Active Pipeline pulse + "Sprint Active" label (placeholder
+ *     text — we don't track sprints server-side).
+ *   - New Board — opens the `CreateBoardDrawer` (Phase 5).
+ *   - Manage Access — opens the `ShareBoardModal` (Phase 5).
+ *   - New Task — opens the inline title input and calls
+ *     `onCreateTask`.
  *
  * The velocity sparkline, sprint name + dates, filter chips,
- * group-by selector, and "X / Y issues" counter from the Stitch
- * mock are intentionally omitted — none have a backing endpoint.
+ * group-by selector, "X / Y issues" counter, and the Board / List /
+ * Timeline view-mode toggle from the Stitch mock are intentionally
+ * omitted — none have a backing endpoint in this pass.
  */
 export function BoardControlBar({
   onCreateTask,
   canCreateTask = true,
+  onOpenShareModal,
+  onOpenCreateBoard,
 }: BoardControlBarProps) {
-  const [view, setView] = useState<ViewMode>("board");
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
 
@@ -68,17 +67,24 @@ export function BoardControlBar({
           </div>
 
           <div className="flex items-center gap-space-md">
-            {/* <div className="flex items-center -space-x-2">
-              <UserAvatar size="sm" presence="tertiary" />
-            </div> */}
+            <button
+              type="button"
+              title="Create a new board"
+              onClick={onOpenCreateBoard}
+              className="flex items-center gap-space-xs px-space-md py-1.5 rounded-lg bg-surface-container-high hover:bg-surface-container-highest text-on-surface font-label-ui-md text-label-ui-md transition-colors shadow-sm"
+            >
+              <Icon name="add_box" className="w-4 h-4" />
+              <span className="hidden md:inline">New Board</span>
+            </button>
 
             <button
               type="button"
-              title="Invite teammates (coming in Phase 5)"
-              className="flex items-center gap-1.5 px-space-md py-1.5 rounded-lg bg-surface-container-high hover:bg-surface-bright text-on-surface font-label-ui-md text-label-ui-md shadow-sm transition-all"
+              title="Share board & manage collaborators"
+              onClick={onOpenShareModal}
+              className="flex items-center gap-space-xs px-space-md py-1.5 rounded-lg bg-primary text-on-primary font-label-ui-md text-label-ui-md hover:bg-primary-fixed-dim transition-colors shadow-sm"
             >
-              <Icon name="person_add" className="w-5 h-5 text-tertiary" />
-              <span className="hidden md:inline">Invite</span>
+              <Icon name="person_add" className="w-4 h-4" />
+              <span className="hidden md:inline">Manage Access</span>
             </button>
 
             {newTaskOpen ? (
@@ -132,44 +138,6 @@ export function BoardControlBar({
             )}
           </div>
         </div>
-
-        {/* Bottom tier: view-mode toggle only.
-            Filter chips / group-by / "X / Y issues" intentionally omitted
-            because no endpoint backs them. */}
-        {/* <div className="flex flex-wrap items-center justify-between gap-space-sm pt-space-xs">
-          <div className="flex items-center bg-surface-container-low p-0.5 rounded-lg">
-            {viewModes.map((m) => {
-              const active = view === m.key;
-              return (
-                <button
-                  key={m.key}
-                  type="button"
-                  onClick={() => setView(m.key)}
-                  aria-pressed={active}
-                  className={[
-                    "flex items-center gap-1 px-2.5 py-1 rounded-md",
-                    "font-label-ui-md text-label-ui-md",
-                    "transition-colors",
-                    active
-                      ? "bg-surface-container-high text-primary shadow-sm"
-                      : "text-on-surface-variant hover:text-on-surface",
-                  ].join(" ")}
-                >
-                  <Icon name={m.icon} className="w-5 h-5" />
-                  <span>{m.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <span className="font-label-mono-sm text-label-mono-sm text-outline px-2 py-1 rounded bg-surface-container">
-            {view === "board"
-              ? "Drag cards to reorder"
-              : view === "list"
-                ? "List view (coming soon)"
-                : "Timeline (coming soon)"}
-          </span>
-        </div> */}
       </div>
     </section>
   );

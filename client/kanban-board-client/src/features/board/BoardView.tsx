@@ -36,6 +36,9 @@ import { Sidebar } from "./components/Sidebar";
 import { BoardHeader } from "./components/BoardHeader";
 import { BoardControlBar } from "./components/BoardControlBar";
 import { AddColumnGhost } from "./components/AddColumnGhost";
+import { ShareBoardModal } from "./components/ShareBoardModal";
+import { CreateBoardDrawer } from "./components/CreateBoardDrawer";
+import { useAuth } from "@/features/auth/useAuth";
 
 export interface BoardViewProps {
   boardId: string;
@@ -69,6 +72,18 @@ export default function BoardView({ boardId }: BoardViewProps) {
   const [activeDrag, setActiveDrag] = useState<ActiveDrag>(null);
   const [inFlightIds, setInFlightIds] = useState<Set<string>>(() => new Set());
   const [toast, setToast] = useState<string | null>(null);
+
+  // Phase 5: Stitch-faithful share modal + create-board drawer are
+  // owned by the board view so the control bar's "New Board" and
+  // "Manage Access" buttons can toggle them. They are local state
+  // only — the underlying `POST /api/boards/:id/members`,
+  // `DELETE /api/boards/:id/members/:userId`, and `POST /api/boards`
+  // endpoints are not yet wired; the modal renders the data it has
+  // and the drawer is a no-op until those land.
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [createBoardOpen, setCreateBoardOpen] = useState(false);
+
+  const { userId, userEmail } = useAuth();
 
   // Auto-dismiss the toast after a few seconds.
   useEffect(() => {
@@ -349,6 +364,8 @@ export default function BoardView({ boardId }: BoardViewProps) {
           <BoardControlBar
             onCreateTask={handleNewTask}
             canCreateTask={canCreateTask}
+            onOpenShareModal={() => setShareModalOpen(true)}
+            onOpenCreateBoard={() => setCreateBoardOpen(true)}
           />
 
           <DndContext
@@ -475,6 +492,39 @@ export default function BoardView({ boardId }: BoardViewProps) {
           </button>
         </div>
       ) : null}
+
+      {/* ---- Share modal + create-board drawer (Phase 5) ----
+       *
+       * Both overlays are rendered at the board root so the body
+       * scroll-lock and Esc-to-close handlers they own never need
+       * to be re-implemented. The drawer's slide-in motion and
+       * the modal's fade+zoom-in motion are both Tailwind
+       * animate-in utilities from the kinetic-grid token set. */}
+      {board ? (
+        <ShareBoardModal
+          open={shareModalOpen}
+          onClose={() => setShareModalOpen(false)}
+          boardTitle={board.title}
+          members={board.members}
+          currentUserId={userId}
+          onSendInvite={() =>
+            setToast(
+              "Invite endpoint lands in Phase 5 — collaboration is read-only this pass.",
+            )
+          }
+        />
+      ) : null}
+
+      <CreateBoardDrawer
+        open={createBoardOpen}
+        onClose={() => setCreateBoardOpen(false)}
+        leadEmail={userEmail}
+        onCreate={() =>
+          setToast(
+            "Create-board endpoint lands in Phase 5 — new boards are not yet persisted.",
+          )
+        }
+      />
     </div>
   );
 }

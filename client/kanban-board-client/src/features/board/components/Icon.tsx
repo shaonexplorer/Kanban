@@ -71,7 +71,26 @@ export type IconName =
   | "speed"
   | "check_box"
   | "calendar_today"
-  | "warning";
+  | "warning"
+  // Share modal + create-board drawer icons (Kinetic Grid Kandor
+  // Stitch). Each is the Material Symbols Outlined silhouette for
+  // the 24x24 glyph the Stitch HTML references; the inline-SVG
+  // rendering keeps the rest of the app free of the 150 KB font.
+  | "content_copy"
+  | "qr_code_2"
+  | "shield"
+  | "groups"
+  | "expand_more"
+  | "developer_board"
+  | "bug_report"
+  | "radio_button_checked"
+  | "radio_button_unchecked"
+  | "table_rows"
+  | "timeline"
+  | "palette"
+  | "account_tree"
+  | "lock_open"
+  | "add_circle";
 
 const paths: Record<IconName, string> = {
   // Material Symbols Outlined silhouettes. Each path is the public
@@ -145,6 +164,33 @@ const paths: Record<IconName, string> = {
   check_box: "M19 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.11 0 2-.9 2-2V5c0-1.11-.9-2-2-2zm0 16H5V5h14v14zM17.99 9l-1.41-1.42-6.59 6.59-2.58-2.57-1.42 1.41 4 3.99z",
   calendar_today: "M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19a2 2 0 002 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z",
   warning: "M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z",
+  // ---- Share modal + create-board drawer icons ----
+  content_copy:
+    "M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z",
+  qr_code_2:
+    "M15 21h-2v-2h2v2zm-2-7h-2v2h2v-2zm-2 2h-2v2h2v-2zm-2-2H7v2h2v-2zm-2-2h2V8H7v4zm6-2h-2v2h2V8zm2-2h-2v2h2V6zm2 2h-2v2h2V8zm-2-4h-2v2h2V4zm4 8h-2v2h2v-2zm0-4h-2v2h2V8zm2-2h-2v2h2V6zm-2-2h-2v2h2V4zM3 21h18v-2H3v-2H1v4h2v-2zm0-6h2v-2H3v-2H1v4h2v-2zm0-6h2V7H3V5H1v4h2V9zm0 4h2v-2H3v2zm14 0h2v-2h-2v2zM7 3v2H5V3H3v2H1v2h2v2h2v2h2V9h2V7H7V5H5V3h2z",
+  shield:
+    "M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z",
+  groups:
+    "M12 12.75c1.63 0 3.07.39 4.24.9 1.08.48 1.76 1.56 1.76 2.73L18 18H6l.01-1.61c0-1.18.68-2.26 1.76-2.73 1.17-.52 2.6-.91 4.23-.91zM4 13c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm1.13 1.1c-.37-.06-.74-.1-1.13-.1-.99 0-1.93.21-2.78.58A2.01 2.01 0 000 16.43L0 18l4.5 0v-1.61c0-.83.23-1.61.63-2.29zM20 13c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm4 3.43c0-.81-.48-1.53-1.22-1.85A6.95 6.95 0 0020 14c-.39 0-.76.04-1.13.1.4.68.63 1.46.63 2.29L20 18l4 0v-1.57zM12 6c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3z",
+  expand_more: "M16.59 8.59L12 13.17 7.41 8.59 6 10l6 6 6-6z",
+  developer_board:
+    "M22 9V7h-2V5c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-2h2v-2h-2v-2h2v-2h-2V9h2zm-4 10H4V5h14v14zM6 13h5v4H6v-4zm6-6h4v3h-4V7zM6 7h5v5H6V7zm6 4h4v6h-4v-6z",
+  bug_report:
+    "M20 8h-2.81c-.45-.78-1.07-1.45-1.82-1.96L17 4.41 15.59 3l-2.17 2.17a6.002 6.002 0 00-5.94 0L5.41 3 4 4.41l1.62 1.63C4.88 6.55 4.26 7.22 3.81 8H1v2h2.09c-.05.33-.09.66-.09 1v1H1v2h2v1c0 .34.04.67.09 1H1v2h2.81c1.04 1.79 2.97 3 5.19 3s4.15-1.21 5.19-3H20v-2h-2.09c.05-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.04-.67-.09-1H20V8zm-6 8h-4v-2h4v2zm0-4h-4v-2h4v2z",
+  radio_button_checked: "M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zm0-5C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z",
+  radio_button_unchecked: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z",
+  table_rows:
+    "M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 2v3H5V5h14zm0 5v4H5v-4h14zm0 9H5v-3h14v3z",
+  timeline:
+    "M23 6c0-1.1-.9-2-2-2h-3.18C17.4 2.84 16.3 2 15 2s-2.4.84-2.82 2H9c-1.1 0-2 .9-2 2v3.18C5.84 9.6 5 10.7 5 12s.84 2.4 2 2.82V18c0 1.1.9 2 2 2h3.18c.42 1.16 1.52 2 2.82 2s2.4-.84 2.82-2H21c1.1 0 2-.9 2-2v-3.18c1.16-.42 2-1.52 2-2.82s-.84-2.4-2-2.82V6zM21 18h-3.18c-.42 1.16-1.52 2-2.82 2s-2.4-.84-2.82-2H9v-3.18c-1.16-.42-2-1.52-2-2.82s.84-2.4 2-2.82V6h3.18c.42-1.16 1.52-2 2.82-2s2.4.84 2.82 2H21v3.18c1.16.42 2 1.52 2 2.82s-.84 2.4-2 2.82V18zm-6-9c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z",
+  palette:
+    "M12 2C6.49 2 2 6.49 2 12s4.49 10 10 10c1.38 0 2.5-1.12 2.5-2.5 0-.61-.23-1.2-.64-1.67-.08-.1-.13-.21-.13-.33 0-.28.22-.5.5-.5H16c3.31 0 6-2.69 6-6 0-4.96-4.49-9-10-9zm-5.5 9a1.5 1.5 0 100-3 1.5 1.5 0 000 3zm3-4a1.5 1.5 0 100-3 1.5 1.5 0 000 3zm5 0a1.5 1.5 0 100-3 1.5 1.5 0 000 3zm3 4a1.5 1.5 0 100-3 1.5 1.5 0 000 3z",
+  account_tree:
+    "M17 11h2V3H7v2h10v6zm-4 4h2V7H5v2h2v6zm-4 4h2v-4H3v2h2v2zm16-4h-2v-2h-2v-2h-4v2h2v2h-2v2h-2v2h2v-2h2v-2h2v2h2v2h-2v2h2v-2h2v-2h2v-2z",
+  lock_open:
+    "M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6h1.9c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm0 12H6V10h12v10zm-6-3c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2z",
+  add_circle: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z",
 };
 
 export interface IconProps extends Omit<SVGProps<SVGSVGElement>, "name"> {
