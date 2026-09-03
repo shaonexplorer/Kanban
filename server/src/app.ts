@@ -6,6 +6,7 @@ import { authMiddleware } from "./common/middleware/auth.middleware.js";
 import { authRouter } from "./modules/auth/index.js";
 import { boardInvitationsRouter } from "./modules/board-invitations/index.js";
 import { boardsRouter } from "./modules/boards/index.js";
+import { columnsRouter } from "./modules/columns/index.js";
 import { healthRouter } from "./modules/health/index.js";
 
 /**
@@ -37,6 +38,10 @@ function createApp(): Application {
   app.use("/api/auth", authRouter);
   app.use("/api/boards", boardsRouter);
   app.use("/api/board-invitations", boardInvitationsRouter);
+  // The columns router owns BOTH /api/boards/:boardId/columns and
+  // /api/columns/:id subtrees — mounted on `/api` so each route defines
+  // its own full path. Single mount point, no path collisions.
+  app.use("/api", columnsRouter);
 
   // Central error handler MUST be registered last.
   app.use(errorMiddleware);
