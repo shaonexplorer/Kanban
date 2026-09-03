@@ -8,14 +8,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Mini Kanban Board/
 ├── client/
 │   └── kanban-board-client/    # Next.js 16 + React 19 + TypeScript + Tailwind CSS v4
-├── server/                      # Backend (Node.js + Express + TypeScript + Prisma) — Phase 1 & 2 complete; Phase 3 in progress (Step 1 done)
+├── server/                      # Backend (Node.js + Express + TypeScript + Prisma) — Phase 1 & 2 complete; Phase 3 in progress (Steps 1 & 2 done)
 ├── specs/                       # Project specifications and documentation
 │   ├── Mission.md              # Project purpose and success criteria
 │   ├── Techstack.md            # Tech stack decisions and planned libraries
 │   ├── Roadmap.md             # Phased implementation roadmap
 │   ├── Phase01/               # Phase 1 specs: Plan.md, Requirements.md, Validation.md — Foundation
 │   ├── Phase02/               # Phase 2 specs: Plan.md, Requirements.md, Validation.md — Boards & Access Control
-│   └── Phase03/               # Phase 3 specs: Plan.md, Requirements.md, Validation.md — Columns & Tasks (Step 1 schema evolution done)
+│   └── Phase03/               # Phase 3 specs: Plan.md, Requirements.md, Validation.md — Columns & Tasks (Steps 1 & 2 done: schema evolution + access-control loaders)
 └── specs.md                     # Top-level spec summary
 ```
 
@@ -29,7 +29,7 @@ Mini Kanban Board/
 - **Backend:** Node.js + Express 5 + TypeScript (ES Modules, Modular MVC layout)
 - **Database:** PostgreSQL + Prisma 7 (with `@prisma/adapter-pg` driver adapter)
 - **Auth:** JWT tokens (`jsonwebtoken`) + bcrypt password hashing (`bcryptjs`)
-- **Access control (Phase 2):** `loadBoard` + `requireBoardAccess` + `requireBoardOwner` middlewares in `server/src/common/middleware/access-control.middleware.ts`. `loadBoard` reads the board id from `req.params` (or `req.body`) and attaches the non-deleted `Board` to `req.board`; the two `require*` middlewares enforce owner-only vs. owner-or-member access and throw `HttpError(403, "Forbidden")` otherwise. Reusable in Phase 3+ for column/task scopes.
+- **Access control:** `loadBoard` + `loadColumn` + `loadTask` + `requireBoardAccess` + `requireBoardOwner` middlewares in `server/src/common/middleware/access-control.middleware.ts`. `loadBoard` reads the board id from `req.params` (or `req.body`) and attaches the non-deleted `Board` to `req.board`; `loadColumn` (Phase 3) and `loadTask` (Phase 3) do the same for sub-resources, fetching the column (with its board) or the task (with its column and that column's board) in a single query, treating missing or soft-deleted parent as 404, and additionally exposing the resolved board on `req.board` so the same `requireBoardAccess` / `requireBoardOwner` middlewares chain behind them. The two `require*` middlewares enforce owner-only vs. owner-or-member access and throw `HttpError(403, "Forbidden")` otherwise.
 - **Validation:** `zod` schemas per feature module + a generic `validate()` middleware
 - **Dev runner:** `tsx` (ESM-compatible TypeScript runner with watch mode)
 - **Package manager:** npm
@@ -60,7 +60,7 @@ The project uses Tailwind CSS v4 with the `@tailwindcss/postcss` package — con
 
 ## Backend Development
 
-The backend lives at `server/` and is organized as a **Modular MVC** layout on native ES Modules. **Phase 1 (Foundation) and Phase 2 (Boards & Access Control) are complete.** **Phase 3 (Columns & Tasks) is in progress — Step 1 (schema evolution) is done** and adds `onDelete: Cascade` from `Task → Column` so `DELETE /api/columns/:id` cleans up its tasks atomically; `Column → Board` and `Board → BoardUser` remain `RESTRICT` (boards still soft-delete via `deletedAt`). The Prisma schema includes `Board.deletedAt`, `BoardUser.joinedAt`, and a `BoardInvitation` model (with `BoardInvitationStatus` enum), and the access-control middlewares (`loadBoard`, `requireBoardAccess`, `requireBoardOwner`) live in `src/common/middleware/access-control.middleware.ts`. The `boards` module (CRUD + member management + owner-driven invitations) is implemented in `src/modules/boards/`, and the `board-invitations` module (list / accept / decline invitations addressed to the caller) is implemented in `src/modules/board-invitations/`. The `columns` and `tasks` modules are not yet implemented — they land in Phase 3 Steps 3 & 4.
+The backend lives at `server/` and is organized as a **Modular MVC** layout on native ES Modules. **Phase 1 (Foundation) and Phase 2 (Boards & Access Control) are complete.** **Phase 3 (Columns & Tasks) is in progress — Steps 1 & 2 are done:** Step 1 (schema evolution) adds `onDelete: Cascade` from `Task → Column` so `DELETE /api/columns/:id` cleans up its tasks atomically; `Column → Board` and `Board → BoardUser` remain `RESTRICT` (boards still soft-delete via `deletedAt`). Step 2 extends the access-control layer with `loadColumn` and `loadTask` middlewares in `src/common/middleware/access-control.middleware.ts` — they fetch the column (with its board) or the task (with its column and that column's board) in a single Prisma query, treat missing or soft-deleted parent as 404, and expose the resolved board on `req.board` so the existing `requireBoardAccess` / `requireBoardOwner` middlewares chain behind them unchanged. The Prisma schema includes `Board.deletedAt`, `BoardUser.joinedAt`, and a `BoardInvitation` model (with `BoardInvitationStatus` enum). The `boards` module (CRUD + member management + owner-driven invitations) is implemented in `src/modules/boards/`, and the `board-invitations` module (list / accept / decline invitations addressed to the caller) is implemented in `src/modules/board-invitations/`. The `columns` and `tasks` modules are not yet implemented — they land in Phase 3 Steps 3 & 4 and will reuse `loadColumn` / `loadTask`.
 
 ```bash
 cd server
@@ -88,7 +88,7 @@ npm run prisma:studio
 - Auth: `POST /api/auth/register` → `{ id, email, token }` (201); `POST /api/auth/login` → `{ email, token }` (200). Both issue a signed JWT; the password is never returned.
 - Boards: `GET /api/boards` (caller's boards, tagged `role: "OWNER" | "MEMBER"`, soft-deleted excluded), `POST /api/boards` (create, returns 201 with `{ id, title, ownerId, createdAt }`), `GET /api/boards/:id` (nested detail: `{ ..., columns: [], members: [{ userId, email, role, joinedAt }] }` — owner first, then accepted collaborators newest-first by `joinedAt`), `PATCH /api/boards/:id` (owner renames, 200), `DELETE /api/boards/:id` (owner soft-deletes via `deletedAt`, 204), `GET /api/boards/:id/members` (list), `POST /api/boards/:id/members` (owner invites a registered user — exactly one of `userId` (UUID) or `email`; 201 invitation, 400 owner/empty/both, 404 unknown email, 409 already-member or duplicate pending), `DELETE /api/boards/:id/members/:userId` (owner removes an accepted collaborator, 204; 400 on owner, 404 on non-member). All routes require `requireAuth`; `:id` routes chain `validate(BoardIdParamSchema, "params") → loadBoard → requireBoardAccess` (read paths) or `requireBoardOwner` (mutations); soft-deleted boards are treated as 404 on every read and every mutation. Param validation runs *before* `loadBoard` so a non-UUID id returns 400 rather than 404.
 - Board invitations: `GET /api/board-invitations` (caller's PENDING invites, joined with `boardTitle` + `inviterEmail`, newest first), `POST /api/board-invitations/:id/accept` (atomic `prisma.$transaction` that idempotently upserts a `BoardUser` row and flips the invitation to `ACCEPTED`; 200 with `{ boardId, invitationId, status: "ACCEPTED" }`), `POST /api/board-invitations/:id/decline` (single-write `DECLINED`; 200 with `{ invitationId, status: "DECLINED" }`). All routes require `requireAuth`; per-invitation actions verify `inviteeId === req.user.id` and reject with 403 / 404 / 409 (board soft-deleted, not addressee, or no longer PENDING).
-- Middleware: `authMiddleware` (attaches `req.user`) and `requireAuth` (rejects unauthenticated); `loadBoard` + `requireBoardAccess` + `requireBoardOwner` in `access-control.middleware.ts` — wire them as `requireAuth → loadBoard → requireBoardAccess|requireBoardOwner` on every `:id` board route
+- Middleware: `authMiddleware` (attaches `req.user`) and `requireAuth` (rejects unauthenticated); `loadBoard` + `loadColumn` + `loadTask` + `requireBoardAccess` + `requireBoardOwner` in `access-control.middleware.ts` — wire them as `requireAuth → loadBoard|loadColumn|loadTask → requireBoardAccess|requireBoardOwner` on every resource-scoped `:id` route. `loadColumn` / `loadTask` (Phase 3) auto-populate `req.board` from the parent, so the same `requireBoardAccess` / `requireBoardOwner` middlewares chain behind them unchanged.
 - Health: `GET /health` — returns 200 `{status: "ok", timestamp, db: "up"}` when the DB responds to a `SELECT 1`, or 503 `{status: "degraded", timestamp, db: "down", error}` when it doesn't (useful for orchestrators/liveness probes)
 
 **Layout (Modular MVC):**
@@ -105,10 +105,10 @@ server/
 │   ├── lib/prisma.ts       # Shared Prisma client (hot-reload safe singleton)
 │   ├── common/             # Cross-cutting layer — no business logic
 │   │   ├── errors/         # HttpError class + central errorMiddleware
-│   │   ├── middleware/     # auth.middleware.ts (authMiddleware + requireAuth), access-control.middleware.ts (loadBoard, requireBoardAccess, requireBoardOwner)
+│   │   ├── middleware/     # auth.middleware.ts (authMiddleware + requireAuth), access-control.middleware.ts (loadBoard, loadColumn, loadTask, requireBoardAccess, requireBoardOwner)
 │   │   ├── utils/          # asyncHandler (forwards rejections to error mw)
 │   │   ├── validators/     # validate.middleware.ts (generic zod runner; supports source: "body" | "params" | "query")
-│   │   └── types/          # express.d.ts (global Request.user + Request.board augmentation)
+│   │   └── types/          # express.d.ts (global Request.user + Request.board + Request.column + Request.task augmentation)
 │   ├── modules/            # One folder per feature
 │   │   ├── auth/                    # auth.controller, auth.service, auth.validation, auth.routes, index
 │   │   ├── boards/                  # boards.controller, boards.service, boards.validation, boards.routes, index — CRUD + members + invitations
@@ -124,10 +124,10 @@ server/
 - `<name>.controller.ts` — HTTP I/O only (read `req`, call service, write `res`)
 - `<name>.service.ts` — business logic (DB, hashing, external calls)
 - `<name>.validation.ts` — `zod` schemas + inferred input types
-- `<name>.routes.ts` — `Router` that wires `validate(schema, "body" | "params") → [loadBoard → requireBoardAccess|requireBoardOwner →] asyncHandler(controller.fn)`
+- `<name>.routes.ts` — `Router` that wires `validate(schema, "body" | "params") → [loadBoard|loadColumn|loadTask → requireBoardAccess|requireBoardOwner →] asyncHandler(controller.fn)`
 - `index.ts` — barrel: `export { default as <name>Router } from "./<name>.routes.js"`
 
-Then mount it in `src/app.ts` (e.g. `app.use("/api/<name>", <name>Router)`) and add the new env vars (if any) to the `EnvSchema` in `src/config/env.ts`. Throw `HttpError(status, message)` from the service to surface domain errors through the central error middleware. On `:id` routes that resolve to a board-scoped resource, always use `loadBoard` (or its Phase 3 successors `loadColumn` / `loadTask`) to populate `req.board` before the authorization check — never re-query the board inside the controller.
+Then mount it in `src/app.ts` (e.g. `app.use("/api/<name>", <name>Router)`) and add the new env vars (if any) to the `EnvSchema` in `src/config/env.ts`. Throw `HttpError(status, message)` from the service to surface domain errors through the central error middleware. On `:id` routes that resolve to a board-scoped resource, use the deepest applicable loader: `loadBoard` for board routes, `loadColumn` for column routes (auto-exposes `req.board`), or `loadTask` for task routes (auto-exposes `req.board` and `req.column`) — never re-query the parent inside the controller.
 
 ## Environment & Configuration
 
@@ -156,7 +156,7 @@ No automated test framework is configured yet. For now:
 - `specs/Roadmap.md` — 5-phase implementation roadmap (Foundation → Boards & Access → Columns & Tasks → Ordering & Drag-and-Drop → Polish)
 - `specs/Phase01/` — Phase 1 detailed deliverables (Plan, Requirements, Validation)
 - `specs/Phase02/` — Phase 2 detailed deliverables (Plan, Requirements, Validation) — Boards & Access Control
-- `specs/Phase03/` — Phase 3 detailed deliverables (Plan, Requirements, Validation) — Columns & Tasks (Step 1 done)
+- `specs/Phase03/` — Phase 3 detailed deliverables (Plan, Requirements, Validation) — Columns & Tasks (Steps 1 & 2 done: schema evolution + access-control loaders)
 
 ## Development Workflow & Skills
 
