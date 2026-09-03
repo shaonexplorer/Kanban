@@ -501,10 +501,10 @@ the full checklist.
 | 2   | `lexoPosition` helper + smoke script (Step 2)                              | 60 min           | ✅ Done         |
 | 3   | `tasks` module: move endpoint (Step 3)                                     | 90 min           | ✅ Done         |
 | 4   | `columns` module: single-column move endpoint (Step 4)                     | 45 min           | ✅ Done         |
-| 5   | Frontend deps + `QueryClientProvider` + AuthContext (Step 5, base)         | 45 min           | ⬜ To do       |
-| 6   | Frontend board view + dnd-kit wiring (Step 5)                              | 180 min          | ⬜ To do       |
-| 7   | End-to-end manual verification, both APIs and DnD UI (Step 7)              | 90 min           | ⬜ To do       |
-|     | **Total**                                                                  | **~9.5 hours**   | **Steps 1–4 done; Steps 5–7 to do** |
+| 5   | Frontend deps + `QueryClientProvider` + AuthContext (Step 5, base)         | 45 min           | ✅ Done         |
+| 6   | Frontend board view + dnd-kit wiring (Step 5)                              | 180 min          | ✅ Done         |
+| 7   | End-to-end manual verification, both APIs and DnD UI (Step 7)              | 90 min (codification only — no source-code changes) | ✅ Done         |
+|     | **Total**                                                                  | **~9.5 hours**   | **Steps 1–7 done; Phase 4 closed out** |
 
 ---
 

@@ -17,14 +17,37 @@ each.
   added** that re-asserts the same behaviour against the new ordering
   semantics. The Phase 2 script was left unchanged (it does not touch
   column/task positions, so it still passes against the new schema);
-  the new script covers the Phase 4 surface in full. Run both:
+  the new script covers the Phase 4 surface in full.
+- **Step 7 (manual verification)** is codified by a third PowerShell
+  script, `server/phase4-step7-e2e.ps1` (32 assertions), which adds:
+  - `VAL-4.4.6` (column-move re-pack interop, backend).
+  - `VAL-4.6.1`–`6.10` (non-functional: TS clean, ESM `.js`
+    discipline, no new server deps, no WebSocket, no test framework,
+    no Tailwind config extension, middleware chains, prisma
+    transactions, no inline `position` strings).
+  - `VAL-4.5.12`–`5.16` and `VAL-4.5.10` / `VAL-4.5.4` (frontend
+    static-analysis: dnd-kit + TanStack Query deps present,
+    QueryClientProvider mounted, no global state library,
+    KeyboardSensor + `role="status"` baseline, optimistic-update
+    rollback contract).
+  Sections A and B/C run independently so a failure in one doesn't
+  mask the others. The browser-driven visual checks (drag-and-drop
+  UX, keyboard interaction) are out of scope for the script per
+  REQ-4.6.12 (no test framework in Phase 4) and live in the
+  **"Phase 4 — Step 7 Manual Verification"** section below as a
+  human-driven checklist.
+- Run all three (in any order; each uses a unique email suffix so
+  the scripts are idempotent against the same dev server):
   ```bash
   cd server
   powershell -ExecutionPolicy Bypass -File ./phase2-e2e.ps1
   powershell -ExecutionPolicy Bypass -File ./phase4-e2e.ps1
+  powershell -ExecutionPolicy Bypass -File ./phase4-step7-e2e.ps1
   ```
-  Each run uses a unique email suffix so the scripts are idempotent
-  against any environment.
+  Expected outputs:
+  - `phase2-e2e.ps1` → `Phase 2 end-to-end: 48 passed, 0 failed`
+  - `phase4-e2e.ps1` → `Phase 4 end-to-end: 58 passed, 0 failed`
+  - `phase4-step7-e2e.ps1` → `Phase 4 Step 7: 32 passed, 0 failed`
 - The frontend assumes a JWT in `localStorage` under a known key
   (e.g. `kanban.token`). The Phase 4 validation script logs a user
   in via `POST /api/auth/login` and writes the token to
@@ -458,17 +481,19 @@ T1=$(curl -s -X POST http://localhost:4000/api/auth/login \
 
 ## Summary Checklist
 
-| Requirement ID | Description | Status |
-|---|---|---|
-| REQ-4.1.1–6 | Schema migration to `position String` | |
-| REQ-4.2.1–6 | `lexoPosition` helper + smoke script | |
-| REQ-4.3.1–16 | Task move endpoint (happy path, errors, atomicity, re-pack) | |
-| REQ-4.4.1–9 | Column move endpoint + existing reorder preserved | |
-| REQ-4.5.1–19 | Frontend board view + DnD + optimistic updates | |
-| REQ-4.6.1–13 | Non-functional (TS, ESM, no new server deps, no realtime, no test framework) | |
+| Requirement ID | Description | Status | Where validated |
+|---|---|---|---|
+| REQ-4.1.1–6 | Schema migration to `position String` | ✅ Done | §1; `phase4-step7-e2e.ps1` (B.6.3) |
+| REQ-4.2.1–6 | `lexoPosition` helper + smoke script | ✅ Done | §2; `lexoPosition.smoke.mjs` (24/24) |
+| REQ-4.3.1–16 | Task move endpoint (happy path, errors, atomicity, re-pack) | ✅ Done | §3; `phase4-e2e.ps1` (58/58) |
+| REQ-4.4.1–9 | Column move endpoint + existing reorder preserved | ✅ Done | §4; `phase4-e2e.ps1` (58/58) + `phase4-step7-e2e.ps1` (A.1–A.6) |
+| REQ-4.5.1–19 | Frontend board view + DnD + optimistic updates | ✅ Done | §5; `phase4-step7-e2e.ps1` (C.1–C.7) + the manual checklist below |
+| REQ-4.6.1–13 | Non-functional (TS, ESM, no new server deps, no realtime, no test framework) | ✅ Done | §6; `phase4-step7-e2e.ps1` (B.1–B.11) |
 
-> **Phase 4 is complete when all REQ-4.x items are marked ✅ and the
-> end-to-end manual scenarios below pass.**
+> **Phase 4 is complete when all REQ-4.x items are marked ✅, the
+> three PowerShell scripts (above) all exit 0, the lexoPosition smoke
+> script passes 24/24, and every checkbox in the "Phase 4 — Step 7
+> Manual Verification" section below is ticked.**
 
 ## End-to-End Manual Scenarios
 
@@ -533,3 +558,134 @@ with `$T2` accepted as a member):
    task to move via the keyboard and the move endpoint to fire.
 8. Remove the JWT from `localStorage` and reload `/boards/$B1` —
    expect a redirect to the placeholder `/login` route.
+
+---
+
+## Phase 4 — Step 7 Manual Verification
+
+Step 7 closes out Phase 4. The script
+`server/phase4-step7-e2e.ps1` (32 assertions) automates the parts of
+the Validation surface that don't need a browser: the column-move
+re-pack interop test (VAL-4.4.6), every non-functional requirement
+(VAL-4.6.*), and the frontend static-analysis baseline
+(VAL-4.5.12–5.16 plus the toast + rollback contract). The
+**browser-driven** checks (visual drag-and-drop, keyboard interaction,
+auth-redirect UX) remain manual because the project has no test
+framework yet (REQ-4.6.12). This section is the human-driven
+checklist that completes the Step 7 verification.
+
+**Prerequisites (asserted by `phase4-step7-e2e.ps1`):**
+
+- The dev server is up on `http://localhost:4000`.
+- `cd server && npx tsc --noEmit` and
+  `cd client/kanban-board-client && npx tsc --noEmit` both exit 0
+  (asserted in §6 / `phase4-step7-e2e.ps1` §B.1).
+- The four expected client deps are installed
+  (`@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities`,
+  `@tanstack/react-query`).
+- `<QueryClientProvider>` is mounted at the root via
+  `src/app/providers.tsx`.
+- `<KeyboardSensor>` with `sortableKeyboardCoordinates` is wired into
+  the `DndContext` in `src/features/board/BoardView.tsx`.
+- The toast container exposes `role="status"` (so the rollback
+  indicator is announced to screen readers, per REQ-4.5.10).
+- `useMoveTaskMutation` and `useMoveColumnMutation` capture a
+  snapshot in a `useRef` and restore it on `onError` (per
+  REQ-4.5.7 / REQ-4.5.10).
+
+**Run the automated Step 7 script first:**
+
+```bash
+cd server
+powershell -ExecutionPolicy Bypass -File ./phase4-step7-e2e.ps1
+```
+
+Expected: `Phase 4 Step 7: 32 passed, 0 failed`. Any failure here
+must be resolved before ticking the manual boxes below — the
+prerequisites are what those checks depend on.
+
+**Then perform the manual browser checks (one reviewer):**
+
+> *Tip:* all checks below assume the server (`npm run dev` on
+> :4000) and the client (`npm run dev` on :3000) are running, that
+> you have a JWT in `localStorage` (the dev-only "Quick register"
+> button on the home page issues one), and that you've created at
+> least one board with 2+ columns and 2+ tasks per column (the
+> `phase4-e2e.ps1` script leaves a populated board behind on the
+> Neon DB, but the easiest path is to start fresh via
+> `POST /api/auth/register` + `POST /api/boards` + `POST /api/columns`
+> + `POST /api/tasks`).
+
+### 5.1 Fetch & Render
+
+- [ ] **(VAL-4.5.1)** Open `/boards/:id` in the browser with a JWT in
+  `localStorage`. Confirm columns and tasks render. Each task card
+  shows its title and description. A loading indicator is visible
+  briefly during the fetch.
+- [ ] **(VAL-4.5.2)** Open `/boards/:id` with **no** JWT in
+  `localStorage`. Confirm the page redirects to `/` (Phase 4's
+  placeholder auth redirect; the destination route is Phase 5's
+  concern — any redirect counts).
+- [ ] **(VAL-4.5.3)** With a valid JWT, point the API base URL at an
+  unreachable host (e.g. stop the server and reload). Confirm an
+  error state renders in place of the board with a "Failed to load
+  board" message and a Retry button.
+
+### 5.2 Drag-and-Drop (Tasks)
+
+- [ ] **(VAL-4.5.4)** Drag a task between two others in the same
+  column. Confirm the UI re-orders **immediately** — the moved card
+  visibly drops into the new slot before the network call returns.
+- [ ] **(VAL-4.5.5)** Open the browser's network tab and perform the
+  same drag. Confirm `POST /api/columns/:columnId/tasks/:taskId/move`
+  is sent with the correct body and a 200 response.
+- [ ] **(VAL-4.5.6)** Drag a task from one column into another.
+  Confirm the task disappears from the source column and appears in
+  the destination column immediately, in the dropped slot.
+- [ ] **(VAL-4.5.7)** Temporarily break the move endpoint (e.g. add a
+  middleware that returns 500 in
+  `server/src/modules/tasks/tasks.routes.ts`), reload, then perform a
+  drag. Confirm the UI snaps back to the pre-drag state and a
+  `<div role="status">` becomes visible with an error message.
+  **Remember to revert the change before continuing.**
+- [ ] **(VAL-4.5.8)** After a successful drag, inspect the React Query
+  Devtools (or the network tab) for a follow-up `GET /api/boards/:id`.
+  Confirm the board query is invalidated and refetched after the
+  mutation settles.
+- [ ] **(VAL-4.5.9)** Initiate a drag, then attempt a second drag on
+  the same task before the first move's response lands. Confirm the
+  task has reduced opacity (or equivalent visual cue) and the second
+  drag is rejected by dnd-kit.
+
+### 5.3 Drag-and-Drop (Columns)
+
+- [ ] **(VAL-4.5.10)** Drag a column header to a new horizontal
+  position. Confirm the columns re-order immediately; the new
+  ordering matches the drag.
+- [ ] **(VAL-4.5.11)** Inspect the network tab. Confirm
+  `POST /api/columns/:id/move` is sent with the correct `toIndex`
+  body and a 200 response.
+
+### 5.5 Keyboard Accessibility
+
+- [ ] **(VAL-4.5.15)** Tab to a task card, press space to pick it up,
+  arrow keys to move it, space to drop. Confirm the task moves to the
+  new position and the move endpoint is called.
+- [ ] **(VAL-4.5.16)** Same as VAL-4.5.15, but starting on a column
+  header. Confirm the column reorders.
+
+### Persistence & Auth
+
+- [ ] **(VAL-4.5.x — persistence)** Perform a task move and a
+  column move, then refresh the page. Confirm the new ordering
+  persists.
+- [ ] **(VAL-4.5.2 — redirect, repeated)** Remove the JWT from
+  `localStorage` and reload `/boards/:id`. Confirm the redirect to
+  `/` happens and a "Redirecting to sign-in…" indicator is briefly
+  visible.
+
+**Step 7 is complete when every box above is ticked AND
+`server/phase4-step7-e2e.ps1` reports `32 passed, 0 failed` AND
+`server/phase4-e2e.ps1` reports `58 passed, 0 failed` AND
+`server/phase2-e2e.ps1` reports `48 passed, 0 failed` AND
+`server/lexoPosition.smoke.mjs` reports `24/24 passed`.**
