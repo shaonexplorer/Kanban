@@ -62,17 +62,38 @@ function getServerTokenSnapshot(): string | null {
   return null;
 }
 
+// Module-level cache for the parsed user snapshot. `useSyncExternalStore`
+// compares snapshot returns with `Object.is`, which is reference equality
+// for objects. A fresh `{ id, email }` literal on every call would look
+// "different" forever and React would enter an infinite re-render loop
+// the moment `registerWithEmail` / `loginWithEmail` / `clearToken` writes
+// a new entry. The cache is keyed on the raw localStorage string, so
+// repeated calls with the same underlying data return the same reference;
+// a changed raw string triggers a re-parse. Strings/numbers/booleans
+// (`getTokenSnapshot`) don't need this because `Object.is` compares
+// those by value.
+let lastUserRaw: string | null = null;
+let lastUserSnapshot: StoredUser | null = null;
+
 function getUserSnapshot(): StoredUser | null {
   if (typeof window === "undefined") return null;
   const raw = window.localStorage.getItem(USER_STORAGE_KEY);
-  if (!raw) return null;
+  if (raw === lastUserRaw) return lastUserSnapshot;
+  lastUserRaw = raw;
+  if (!raw) {
+    lastUserSnapshot = null;
+    return null;
+  }
   try {
     const parsed = JSON.parse(raw) as Partial<StoredUser>;
     if (typeof parsed.id === "string" && typeof parsed.email === "string") {
-      return { id: parsed.id, email: parsed.email };
+      lastUserSnapshot = { id: parsed.id, email: parsed.email };
+      return lastUserSnapshot;
     }
+    lastUserSnapshot = null;
     return null;
   } catch {
+    lastUserSnapshot = null;
     return null;
   }
 }
@@ -109,6 +130,18 @@ export interface AuthContextValue {
     email: string,
     password: string,
   ) => Promise<{ id: string; email: string; token: string }>;
+  /**
+   * Phase 5 real auth: sign in an existing user via
+   * `POST /api/auth/login` and persist the returned JWT. The server
+   * does not return the user's `id` on login (it returns
+   * `{ email, token }`), so `userId` stays `null` after a login and
+   * the sidebar's identity chip falls back to the email only.
+   * Returns the parsed response.
+   */
+  loginWithEmail: (
+    email: string,
+    password: string,
+  ) => Promise<{ email: string; token: string }>;
 }
 
 export const AuthContext = createContext<AuthContextValue>({
@@ -120,10 +153,18 @@ export const AuthContext = createContext<AuthContextValue>({
   registerWithEmail: async () => {
     throw new Error("AuthProvider not mounted");
   },
+  loginWithEmail: async () => {
+    throw new Error("AuthProvider not mounted");
+  },
 });
 
 interface RegisterResponse {
   id: string;
+  email: string;
+  token: string;
+}
+
+interface LoginResponse {
   email: string;
   token: string;
 }
@@ -192,6 +233,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [setToken],
   );
 
+  const loginWithEmail = useCallback(
+    async (email: string, password: string) => {
+      // `POST /api/auth/login` returns `{ email, token }` (no `id`).
+      // We persist the token via the same `setToken` helper so the
+      // request interceptor in `lib/api.ts` attaches it on the next
+      // call, and we refresh the cached user (email only — `id`
+      // is unknown to the client until a profile route lands in a
+      // later phase).
+      const { data } = await api.post<LoginResponse>("/auth/login", {
+        email,
+        password,
+      });
+      setToken(data.token);
+      if (typeof window !== "undefined") {
+        // Preserve any prior cached `id` so a quick-switch between
+        // accounts doesn't wipe a known good value; otherwise leave
+        // it absent so the sidebar shows the email without a fake
+        // identifier.
+        const existingRaw = window.localStorage.getItem(USER_STORAGE_KEY);
+        let cachedId: string | undefined;
+        if (existingRaw) {
+          try {
+            const parsed = JSON.parse(existingRaw) as Partial<StoredUser>;
+            if (typeof parsed.id === "string") cachedId = parsed.id;
+          } catch {
+            // Ignore malformed cache — we'll write a fresh entry.
+          }
+        }
+        window.localStorage.setItem(
+          USER_STORAGE_KEY,
+          JSON.stringify(
+            cachedId ? { id: cachedId, email: data.email } : { email: data.email },
+          ),
+        );
+        window.dispatchEvent(
+          new StorageEvent("storage", { key: USER_STORAGE_KEY }),
+        );
+      }
+      return data;
+    },
+    [setToken],
+  );
+
   const value = useMemo<AuthContextValue>(
     () => ({
       token,
@@ -200,8 +284,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setToken,
       clearToken,
       registerWithEmail,
+      loginWithEmail,
     }),
-    [token, user, setToken, clearToken, registerWithEmail],
+    [token, user, setToken, clearToken, registerWithEmail, loginWithEmail],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
