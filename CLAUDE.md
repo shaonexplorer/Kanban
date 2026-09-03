@@ -13,7 +13,8 @@ Mini Kanban Board/
 │   ├── Mission.md              # Project purpose and success criteria
 │   ├── Techstack.md            # Tech stack decisions and planned libraries
 │   ├── Roadmap.md             # Phased implementation roadmap
-│   └── Phase01/               # Phase 1 deliverables (Plan, Requirements, Validation)
+│   ├── Phase01/               # Phase 1 deliverables (Plan, Requirements, Validation) — Foundation
+│   └── Phase02/               # Phase 2 deliverables (Plan, Requirements, Validation) — Boards & Access Control (in progress)
 └── specs.md                     # Top-level spec summary
 ```
 
@@ -57,7 +58,7 @@ The project uses Tailwind CSS v4 with the `@tailwindcss/postcss` package — con
 
 ## Backend Development
 
-The backend lives at `server/` and is organized as a **Modular MVC** layout on native ES Modules. Phase 1 is complete.
+The backend lives at `server/` and is organized as a **Modular MVC** layout on native ES Modules. **Phase 1 (Foundation) is complete; Phase 2 (Boards & Access Control) is in progress** — the Prisma schema now includes `Board.deletedAt`, `BoardUser.joinedAt`, and a new `BoardInvitation` model (with `BoardInvitationStatus` enum). Routes for boards and invitations land in the next steps.
 
 ```bash
 cd server
@@ -90,8 +91,8 @@ npm run prisma:studio
 ```
 server/
 ├── prisma/
-│   ├── schema.prisma       # User, Board, BoardUser, Column, Task models
-│   └── migrations/         # Generated SQL migrations
+│   ├── schema.prisma       # User, Board (soft-delete via deletedAt), BoardUser (+ joinedAt), BoardInvitation (+ BoardInvitationStatus enum), Column, Task
+│   └── migrations/         # Generated SQL migrations (init, phase02_boards_access, ...)
 ├── src/
 │   ├── index.ts            # Entry point — validates env, connects DB, starts server
 │   ├── app.ts              # Express app factory (helmet, cors, json, mounts modules, error mw)
@@ -100,7 +101,7 @@ server/
 │   ├── lib/prisma.ts       # Shared Prisma client (hot-reload safe singleton)
 │   ├── common/             # Cross-cutting layer — no business logic
 │   │   ├── errors/         # HttpError class + central errorMiddleware
-│   │   ├── middleware/     # auth.middleware.ts (authMiddleware + requireAuth)
+│   │   ├── middleware/     # auth.middleware.ts (authMiddleware + requireAuth), access-control.middleware.ts (loadBoard, requireBoardAccess, requireBoardOwner) — Phase 2
 │   │   ├── utils/          # asyncHandler (forwards rejections to error mw)
 │   │   ├── validators/     # validate.middleware.ts (generic zod runner)
 │   │   └── types/          # express.d.ts (global Request.user augmentation)
@@ -151,6 +152,7 @@ Set up testing as part of Phase 5 (Polish & Testing) per `specs/Roadmap.md`.
 - `specs/Techstack.md` — Full tech stack with planned libraries for frontend, backend, database, and tooling
 - `specs/Roadmap.md` — 5-phase implementation roadmap (Foundation → Boards & Access → Columns & Tasks → Ordering & Drag-and-Drop → Polish)
 - `specs/Phase01/` — Phase 1 detailed deliverables (Plan, Requirements, Validation)
+- `specs/Phase02/` — Phase 2 detailed deliverables (Plan, Requirements, Validation) — Boards & Access Control
 
 ## Development Workflow & Skills
 
