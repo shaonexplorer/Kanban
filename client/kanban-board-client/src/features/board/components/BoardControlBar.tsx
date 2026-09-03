@@ -54,7 +54,7 @@ export function BoardControlBar({
   }
 
   return (
-    <section className="w-full bg-surface-container-lowest/80 backdrop-blur-md px-space-xl py-space-md shadow-sm">
+    <section className=" w-full bg-surface-container-lowest/80 backdrop-blur-md px-space-xl py-space-md shadow-sm">
       <div className="flex flex-col gap-space-md">
         {/* Top tier: status + actions */}
         <div className="flex flex-wrap items-center justify-between gap-space-md">
@@ -68,16 +68,16 @@ export function BoardControlBar({
           </div>
 
           <div className="flex items-center gap-space-md">
-            <div className="flex items-center -space-x-2">
+            {/* <div className="flex items-center -space-x-2">
               <UserAvatar size="sm" presence="tertiary" />
-            </div>
+            </div> */}
 
             <button
               type="button"
               title="Invite teammates (coming in Phase 5)"
               className="flex items-center gap-1.5 px-space-md py-1.5 rounded-lg bg-surface-container-high hover:bg-surface-bright text-on-surface font-label-ui-md text-label-ui-md shadow-sm transition-all"
             >
-              <Icon name="person_add" className="text-[16px] text-tertiary" />
+              <Icon name="person_add" className="w-5 h-5 text-tertiary" />
               <span className="hidden md:inline">Invite</span>
             </button>
 
@@ -123,14 +123,10 @@ export function BoardControlBar({
                 type="button"
                 onClick={() => setNewTaskOpen(true)}
                 disabled={!canCreateTask}
-                title={
-                  canCreateTask
-                    ? "Add a new task"
-                    : "Add a column first"
-                }
+                title={canCreateTask ? "Add a new task" : "Add a column first"}
                 className="flex items-center gap-1.5 px-space-md py-1.5 rounded-lg bg-primary text-on-primary font-label-ui-md text-label-ui-md shadow-md hover:bg-primary-fixed-dim transition-all disabled:opacity-50"
               >
-                <Icon name="add" className="text-[16px]" />
+                <Icon name="add" className="w-5 h-5" />
                 <span>New Task</span>
               </button>
             )}
@@ -140,7 +136,7 @@ export function BoardControlBar({
         {/* Bottom tier: view-mode toggle only.
             Filter chips / group-by / "X / Y issues" intentionally omitted
             because no endpoint backs them. */}
-        <div className="flex flex-wrap items-center justify-between gap-space-sm pt-space-xs">
+        {/* <div className="flex flex-wrap items-center justify-between gap-space-sm pt-space-xs">
           <div className="flex items-center bg-surface-container-low p-0.5 rounded-lg">
             {viewModes.map((m) => {
               const active = view === m.key;
@@ -159,7 +155,7 @@ export function BoardControlBar({
                       : "text-on-surface-variant hover:text-on-surface",
                   ].join(" ")}
                 >
-                  <Icon name={m.icon} className="text-[16px]" />
+                  <Icon name={m.icon} className="w-5 h-5" />
                   <span>{m.label}</span>
                 </button>
               );
@@ -173,7 +169,7 @@ export function BoardControlBar({
                 ? "List view (coming soon)"
                 : "Timeline (coming soon)"}
           </span>
-        </div>
+        </div> */}
       </div>
     </section>
   );

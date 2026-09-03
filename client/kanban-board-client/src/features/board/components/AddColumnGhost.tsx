@@ -33,7 +33,7 @@ export function AddColumnGhost({ onClick }: AddColumnGhostProps) {
       ].join(" ")}
     >
       <div className="size-10 rounded-full bg-surface-container-high group-hover:bg-primary group-hover:text-on-primary flex items-center justify-center text-outline transition-all duration-200">
-        <Icon name="add" className="text-[20px]" />
+        <Icon name="add" className="w-7 h-7" />
       </div>
       <span className="font-headline-sm text-headline-sm text-outline group-hover:text-on-surface transition-colors">
         Add Column

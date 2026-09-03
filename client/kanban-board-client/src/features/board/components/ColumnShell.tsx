@@ -1,7 +1,10 @@
 "use client";
 
 import { useSortable } from "@dnd-kit/sortable";
-import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { CSSProperties } from "react";
 import { TaskCardShell } from "./TaskCardShell";
@@ -119,7 +122,7 @@ export function ColumnShell({
             }}
             className="size-6 flex items-center justify-center rounded text-outline hover:text-on-surface hover:bg-surface-container-high transition-colors"
           >
-            <Icon name="add" className="text-[16px]" />
+            <Icon name="add" className="w-5 h-5" />
           </button>
           <button
             type="button"
@@ -127,7 +130,7 @@ export function ColumnShell({
             onClick={(e) => e.stopPropagation()}
             className="size-6 flex items-center justify-center rounded text-outline hover:text-on-surface hover:bg-surface-container-high transition-colors"
           >
-            <Icon name="more_horiz" className="text-[16px]" />
+            <Icon name="more_horiz" className="w-5 h-5" />
           </button>
         </div>
       </header>
@@ -138,7 +141,9 @@ export function ColumnShell({
             <TaskCardShell
               key={task.id}
               task={task}
-              inFlight={columnDimmed || inFlightIds.has(task.id) || isAnyDragging}
+              inFlight={
+                columnDimmed || inFlightIds.has(task.id) || isAnyDragging
+              }
             />
           ))}
         </SortableContext>
@@ -154,7 +159,7 @@ export function ColumnShell({
               "hover:bg-surface-container/40",
             ].join(" ")}
           >
-            <Icon name="south" className="text-[18px]" />
+            <Icon name="south" className="w-4 h-4" />
             <span className="font-label-ui-sm text-label-ui-sm">
               Drop task here
             </span>
@@ -166,7 +171,7 @@ export function ColumnShell({
           onClick={() => onAddTask?.(column.id)}
           className="w-full flex items-center justify-center gap-1 py-space-xs mt-space-xs rounded-lg text-outline hover:text-on-surface hover:bg-surface-container transition-colors font-label-ui-md text-label-ui-md"
         >
-          <Icon name="add" className="text-[16px]" />
+          <Icon name="add" className="w-5 h-5" />
           <span>Add Task</span>
         </button>
       </div>

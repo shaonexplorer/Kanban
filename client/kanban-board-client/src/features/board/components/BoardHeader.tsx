@@ -30,7 +30,7 @@ export function BoardHeader({ boardId }: BoardHeaderProps) {
           <span className="hover:text-on-surface transition-colors cursor-pointer truncate">
             Core Product Engine
           </span>
-          <Icon name="chevron_right" className="text-[16px] shrink-0" />
+          <Icon name="chevron_right" className="w-5 h-5 shrink-0" />
           <span className="font-headline-sm text-headline-sm text-on-surface truncate">
             {title}
           </span>
@@ -44,7 +44,7 @@ export function BoardHeader({ boardId }: BoardHeaderProps) {
         <div className="relative flex items-center">
           <Icon
             name="filter_list"
-            className="absolute left-space-sm text-outline text-[16px] pointer-events-none"
+            className="absolute left-space-sm text-outline w-5 h-5 pointer-events-none"
           />
           <input
             type="text"
@@ -57,14 +57,23 @@ export function BoardHeader({ boardId }: BoardHeaderProps) {
             title="Filter options (coming in Phase 5)"
             className="absolute right-space-sm text-outline hover:text-on-surface transition-colors"
           >
-            <Icon name="tune" className="text-[16px]" />
+            <Icon name="tune" className="w-5 h-5" />
           </button>
         </div>
 
         {/* Facepile — only the current user is known to the client. */}
-        <div className="flex items-center -space-x-2">
+        {/* <div className="flex items-center -space-x-2">
           <UserAvatar size="sm" presence="tertiary" />
-        </div>
+        </div> */}
+
+        <button
+          type="button"
+          title="Share board (coming in Phase 5)"
+          className="flex items-center gap-space-xs px-space-md py-1.5 rounded-lg bg-primary text-on-primary font-label-ui-md text-label-ui-md hover:bg-primary-fixed-dim transition-colors shadow-sm"
+        >
+          <Icon name="share" className="w-4 h-4" />
+          <span>Share Board</span>
+        </button>
 
         <button
           type="button"
@@ -72,17 +81,8 @@ export function BoardHeader({ boardId }: BoardHeaderProps) {
           title="Notifications (coming in Phase 5)"
           className="relative size-8 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
         >
-          <Icon name="notifications" className="text-[20px]" />
+          <Icon name="notifications" className="w-5 h-5" />
           <span className="absolute top-1.5 right-1.5 size-2 rounded-full bg-primary" />
-        </button>
-
-        <button
-          type="button"
-          title="Share board (coming in Phase 5)"
-          className="flex items-center gap-space-xs px-space-md py-1.5 rounded-lg bg-primary text-on-primary font-label-ui-md text-label-ui-md hover:bg-primary-fixed-dim transition-colors shadow-sm"
-        >
-          <Icon name="share" className="text-[16px]" />
-          <span>Share Board</span>
         </button>
 
         <div className="pl-space-xs">

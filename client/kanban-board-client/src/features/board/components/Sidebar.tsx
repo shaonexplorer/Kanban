@@ -72,7 +72,7 @@ export function Sidebar() {
           <div className="relative flex items-center">
             <Icon
               name="search"
-              className="absolute left-space-sm text-outline text-[16px] pointer-events-none"
+              className="absolute left-space-sm text-outline w-5 h-5 pointer-events-none"
             />
             <input
               type="text"
@@ -106,7 +106,7 @@ export function Sidebar() {
                   className={`${baseClass} ${stateClass}`}
                   aria-current={isActive ? "page" : undefined}
                 >
-                  <Icon name={item.icon} className="text-[18px]" />
+                  <Icon name={item.icon} className="w-5 h-5" />
                   <span>{item.label}</span>
                 </Link>
               );
@@ -125,7 +125,7 @@ export function Sidebar() {
                 title="Create board (coming in Phase 5)"
                 className="size-5 flex items-center justify-center rounded text-outline hover:text-on-surface hover:bg-surface-container-high transition-colors"
               >
-                <Icon name="add" className="text-[16px]" />
+                <Icon name="add" className="w-5 h-5" />
               </button>
             </div>
 
@@ -172,11 +172,13 @@ export function Sidebar() {
                         <span
                           className={`size-2 rounded-full shrink-0 ${dotClass[dotTokenForBoard(b.id)]}`}
                         />
-                        <span className="truncate">{b.title}</span>
+                        <span className="truncate text-[13px]">{b.title}</span>
                       </div>
                       <span
                         className={`font-label-mono-sm text-label-mono-sm ${
-                          isActive ? "text-on-surface-variant" : "text-outline group-hover:text-on-surface-variant"
+                          isActive
+                            ? "text-on-surface-variant"
+                            : "text-outline group-hover:text-on-surface-variant"
                         }`}
                         title={b.role === "OWNER" ? "Owner" : "Member"}
                       >
@@ -194,7 +196,7 @@ export function Sidebar() {
                 title="Create board (coming in Phase 5)"
                 className="w-full flex items-center gap-space-sm py-space-xs text-outline hover:text-primary transition-colors font-label-ui-md text-label-ui-md"
               >
-                <Icon name="add" className="text-[16px]" />
+                <Icon name="add" className="w-5 h-5" />
                 <span>Create Board</span>
               </button>
             </div>
@@ -222,7 +224,7 @@ export function Sidebar() {
             title="Preferences (coming in Phase 5)"
             className="size-7 flex items-center justify-center rounded-lg text-outline hover:text-on-surface hover:bg-surface-container-high transition-colors"
           >
-            <Icon name="more_horiz" className="text-[18px]" />
+            <Icon name="more_horiz" className="w-5 h-5" />
           </button>
         </div>
       </div>

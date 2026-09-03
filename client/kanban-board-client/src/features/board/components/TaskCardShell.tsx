@@ -79,7 +79,7 @@ export function TaskCardShell({ task, inFlight }: TaskCardShellProps) {
           <Icon
             name="drag_indicator"
             className={[
-              "text-[16px]",
+              "text-[14px]",
               dragging
                 ? "text-primary"
                 : "text-outline/60 group-hover:text-outline",
