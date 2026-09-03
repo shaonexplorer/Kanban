@@ -17,7 +17,7 @@ who has access to a board can:
 
 This phase delivers **no reordering-within-column or cross-column movement**
 (those are Phase 4, with a fractional-indexing strategy), and **no drag-and-drop
-UI** (also Phase 4). Phase 3 is the *content-management* surface that the
+UI** (also Phase 4). Phase 3 is the _content-management_ surface that the
 ordering layer will later build on.
 
 ---
@@ -42,19 +42,19 @@ ordering layer will later build on.
 
 ## Architectural Decisions
 
-| Decision | Choice | Why |
-|---|---|---|
-| Module layout | `columns` and `tasks` as separate feature modules | Each is a distinct URL subtree (`/api/boards/:boardId/columns`, `/api/columns/:id/tasks`); matches existing per-feature pattern |
-| Column scope | Nested under `/api/boards/:boardId/columns` | Resource is owned by a board; keeps the URL hierarchy intuitive |
-| Task scope | Nested under `/api/columns/:columnId/tasks` | Same rationale: tasks belong to a column |
-| Per-resource detail routes | `GET/PATCH/DELETE /api/columns/:id` and `/api/tasks/:id` | Per-resource endpoints enable targeted mutations and let Phase 4 reuse `loadColumn` / `loadTask` |
-| Authorization on sub-resources | New `loadColumn` / `loadTask` middlewares that resolve the parent board, then chain into `requireBoardAccess` / `requireBoardOwner` | Reuses existing access checks; controllers never re-query the board |
-| Position strategy (intra-board, intra-column) | **Integer `position` append to the end of the target scope on create** | Phase 3 doesn't ship a reorder endpoint — that's Phase 4. We just need stable, non-overlapping positions; appending `max(position) + 1` (or `0` for an empty scope) is enough. |
-| Reorder endpoints in Phase 3 | **Column reorder (intra-board) ONLY** | The roadmap's Phase 4 §4.1 is "task reordering API" — column reordering is implicit in Phase 3.3 ("Reorder / rename / delete columns"). Task reorder is explicitly Phase 4. |
-| Who can mutate | Owners AND members (column + task) | Both should be able to author content on a shared board |
-| Soft-delete on column/task | Hard delete | Boards already soft-delete; columns/tasks are sub-resources and the cascade from `Board.deletedAt` (when implemented) handles cleanup. Reordering within a column stays sane because the schema is re-keyed on every mutation. |
-| Frontend scope | Backend only in Phase 3 | The frontend (`client/kanban-board-client/`) remains a placeholder; Phase 5's UX + Phase 4's DnD will add UI. |
-| New top-level deps | **None** | Prisma, zod, express, `HttpError`, the existing middlewares cover everything |
+| Decision                                      | Choice                                                                                                                              | Why                                                                                                                                                                                                                            |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Module layout                                 | `columns` and `tasks` as separate feature modules                                                                                   | Each is a distinct URL subtree (`/api/boards/:boardId/columns`, `/api/columns/:id/tasks`); matches existing per-feature pattern                                                                                                |
+| Column scope                                  | Nested under `/api/boards/:boardId/columns`                                                                                         | Resource is owned by a board; keeps the URL hierarchy intuitive                                                                                                                                                                |
+| Task scope                                    | Nested under `/api/columns/:columnId/tasks`                                                                                         | Same rationale: tasks belong to a column                                                                                                                                                                                       |
+| Per-resource detail routes                    | `GET/PATCH/DELETE /api/columns/:id` and `/api/tasks/:id`                                                                            | Per-resource endpoints enable targeted mutations and let Phase 4 reuse `loadColumn` / `loadTask`                                                                                                                               |
+| Authorization on sub-resources                | New `loadColumn` / `loadTask` middlewares that resolve the parent board, then chain into `requireBoardAccess` / `requireBoardOwner` | Reuses existing access checks; controllers never re-query the board                                                                                                                                                            |
+| Position strategy (intra-board, intra-column) | **Integer `position` append to the end of the target scope on create**                                                              | Phase 3 doesn't ship a reorder endpoint — that's Phase 4. We just need stable, non-overlapping positions; appending `max(position) + 1` (or `0` for an empty scope) is enough.                                                 |
+| Reorder endpoints in Phase 3                  | **Column reorder (intra-board) ONLY**                                                                                               | The roadmap's Phase 4 §4.1 is "task reordering API" — column reordering is implicit in Phase 3.3 ("Reorder / rename / delete columns"). Task reorder is explicitly Phase 4.                                                    |
+| Who can mutate                                | Owners AND members (column + task)                                                                                                  | Both should be able to author content on a shared board                                                                                                                                                                        |
+| Soft-delete on column/task                    | Hard delete                                                                                                                         | Boards already soft-delete; columns/tasks are sub-resources and the cascade from `Board.deletedAt` (when implemented) handles cleanup. Reordering within a column stays sane because the schema is re-keyed on every mutation. |
+| Frontend scope                                | Backend only in Phase 3                                                                                                             | The frontend (`client/kanban-board-client/`) remains a placeholder; Phase 5's UX + Phase 4's DnD will add UI.                                                                                                                  |
+| New top-level deps                            | **None**                                                                                                                            | Prisma, zod, express, `HttpError`, the existing middlewares cover everything                                                                                                                                                   |
 
 > **Important constraint on positions:** Phase 3 creates columns/tasks with
 > `position = (max existing position in scope) + 1` (or `0` for an empty
@@ -93,7 +93,7 @@ model Task {
 
 ### 1.2 Recommended addition (project decision required)
 
-The roadmap's Phase 3.2 ("Assign task to a user (optional)") is *optional*
+The roadmap's Phase 3.2 ("Assign task to a user (optional)") is _optional_
 per `specs/Roadmap.md`. **Phase 3 will skip `assigneeId`** — keep the Task
 model unchanged. If a future phase needs assignments, the addition is a
 nullable `String?` FK to `User`, a back-relation, and a single migration.
@@ -219,6 +219,7 @@ locally; the duplicated copy is small enough to keep modules independent).
 ### 3.3 `columns.controller.ts`
 
 Thin HTTP I/O. Each handler:
+
 1. Reads `req.user.id`, `req.params`, `req.body` (validated upstream).
 2. Calls the service.
 3. Responds with the documented status (see Requirements.md).
@@ -230,14 +231,14 @@ Handlers: `createColumn`, `listColumns`, `getColumn`, `updateColumn`,
 
 Wiring uses `validate()` (body / params) and the access-control middlewares:
 
-| Method | Path | Middleware chain |
-|---|---|---|
-| `GET`  | `/boards/:boardId/columns`   | `requireAuth` → `validate(BoardScopedColumnParamSchema, "params")` → `loadBoard` → `requireBoardAccess` → `listColumns` |
-| `POST` | `/boards/:boardId/columns`   | `requireAuth` → `validate(BoardScopedColumnParamSchema, "params")` → `loadBoard` → `requireBoardAccess` → `validate(CreateColumnSchema)` → `createColumn` |
-| `GET`  | `/columns/:id`               | `requireAuth` → `validate(ColumnIdParamSchema, "params")` → `loadColumn` → `requireBoardAccess` → `getColumn` |
-| `PATCH`| `/columns/:id`               | `requireAuth` → `validate(ColumnIdParamSchema, "params")` → `loadColumn` → `requireBoardAccess` → `validate(UpdateColumnSchema)` → `updateColumn` |
-| `DELETE`| `/columns/:id`              | `requireAuth` → `validate(ColumnIdParamSchema, "params")` → `loadColumn` → `requireBoardAccess` → `deleteColumn` |
-| `PATCH`| `/boards/:boardId/columns/reorder` | `requireAuth` → `validate(BoardScopedColumnParamSchema, "params")` → `loadBoard` → `requireBoardAccess` → `validate(ReorderColumnsSchema)` → `reorderColumns` |
+| Method   | Path                               | Middleware chain                                                                                                                                              |
+| -------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/boards/:boardId/columns`         | `requireAuth` → `validate(BoardScopedColumnParamSchema, "params")` → `loadBoard` → `requireBoardAccess` → `listColumns`                                       |
+| `POST`   | `/boards/:boardId/columns`         | `requireAuth` → `validate(BoardScopedColumnParamSchema, "params")` → `loadBoard` → `requireBoardAccess` → `validate(CreateColumnSchema)` → `createColumn`     |
+| `GET`    | `/columns/:id`                     | `requireAuth` → `validate(ColumnIdParamSchema, "params")` → `loadColumn` → `requireBoardAccess` → `getColumn`                                                 |
+| `PATCH`  | `/columns/:id`                     | `requireAuth` → `validate(ColumnIdParamSchema, "params")` → `loadColumn` → `requireBoardAccess` → `validate(UpdateColumnSchema)` → `updateColumn`             |
+| `DELETE` | `/columns/:id`                     | `requireAuth` → `validate(ColumnIdParamSchema, "params")` → `loadColumn` → `requireBoardAccess` → `deleteColumn`                                              |
+| `PATCH`  | `/boards/:boardId/columns/reorder` | `requireAuth` → `validate(BoardScopedColumnParamSchema, "params")` → `loadBoard` → `requireBoardAccess` → `validate(ReorderColumnsSchema)` → `reorderColumns` |
 
 ### 3.5 `index.ts`
 
@@ -279,12 +280,11 @@ zod schemas:
   but at least one required via `.refine`):
   ```ts
   z.object({
-    title:       z.string().trim().min(1).max(200).optional(),
+    title: z.string().trim().min(1).max(200).optional(),
     description: z.string().trim().max(2000).optional(),
-  }).refine(
-    (v) => v.title !== undefined || v.description !== undefined,
-    { message: "At least one of title or description must be provided" },
-  );
+  }).refine((v) => v.title !== undefined || v.description !== undefined, {
+    message: "At least one of title or description must be provided",
+  });
   ```
 - `ColumnScopedTaskParamSchema` — `{ columnId: z.string().uuid() }`
 - `TaskIdParamSchema` — `{ id: z.string().uuid() }`
@@ -331,6 +331,7 @@ module independence (same pattern as columns).
 ### 4.3 `tasks.controller.ts`
 
 Thin HTTP I/O. Each handler:
+
 1. Reads `req.user.id`, `req.params`, `req.body` (validated upstream).
 2. Calls the service.
 3. Responds with the documented status (see Requirements.md).
@@ -341,13 +342,13 @@ Handlers: `createTask`, `listTasks`, `getTask`, `updateTask`, `deleteTask`.
 
 Wiring:
 
-| Method | Path | Middleware chain |
-|---|---|---|
-| `GET`  | `/columns/:columnId/tasks` | `requireAuth` → `validate(ColumnScopedTaskParamSchema, "params")` → `loadColumn` → `requireBoardAccess` → `listTasks` |
-| `POST` | `/columns/:columnId/tasks` | `requireAuth` → `validate(ColumnScopedTaskParamSchema, "params")` → `loadColumn` → `requireBoardAccess` → `validate(CreateTaskSchema)` → `createTask` |
-| `GET`  | `/tasks/:id`              | `requireAuth` → `validate(TaskIdParamSchema, "params")` → `loadTask` → `requireBoardAccess` → `getTask` |
-| `PATCH`| `/tasks/:id`              | `requireAuth` → `validate(TaskIdParamSchema, "params")` → `loadTask` → `requireBoardAccess` → `validate(UpdateTaskSchema)` → `updateTask` |
-| `DELETE`| `/tasks/:id`             | `requireAuth` → `validate(TaskIdParamSchema, "params")` → `loadTask` → `requireBoardAccess` → `deleteTask` |
+| Method   | Path                       | Middleware chain                                                                                                                                      |
+| -------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/columns/:columnId/tasks` | `requireAuth` → `validate(ColumnScopedTaskParamSchema, "params")` → `loadColumn` → `requireBoardAccess` → `listTasks`                                 |
+| `POST`   | `/columns/:columnId/tasks` | `requireAuth` → `validate(ColumnScopedTaskParamSchema, "params")` → `loadColumn` → `requireBoardAccess` → `validate(CreateTaskSchema)` → `createTask` |
+| `GET`    | `/tasks/:id`               | `requireAuth` → `validate(TaskIdParamSchema, "params")` → `loadTask` → `requireBoardAccess` → `getTask`                                               |
+| `PATCH`  | `/tasks/:id`               | `requireAuth` → `validate(TaskIdParamSchema, "params")` → `loadTask` → `requireBoardAccess` → `validate(UpdateTaskSchema)` → `updateTask`             |
+| `DELETE` | `/tasks/:id`               | `requireAuth` → `validate(TaskIdParamSchema, "params")` → `loadTask` → `requireBoardAccess` → `deleteTask`                                            |
 
 ### 4.5 `index.ts`
 
@@ -415,15 +416,15 @@ full checklist.
 
 ## Execution Order
 
-| # | Task | Estimated Effort | Status |
-|---|---|---|---|
-| 1 | Add `loadColumn` + `loadTask` middlewares (Step 2) | 25 min | ⬜ To do |
-| 2 | `columns` module: validation + service + controller + routes (Step 3) | 90 min | ⬜ To do |
-| 3 | `tasks` module: validation + service + controller + routes (Step 4) | 75 min | ⬜ To do |
-| 4 | Populate nested columns/tasks in `GET /api/boards/:id` (Step 5) | 15 min | ⬜ To do |
-| 5 | Mount routers + tsx reload smoke test (Step 6) | 10 min | ⬜ To do |
-| 6 | End-to-end manual verification (Step 7) | 45 min | ⬜ To do |
-|   | **Total** | **~4.5 hours** | **Phase 3 to do** |
+| #   | Task                                                                  | Estimated Effort | Status            |
+| --- | --------------------------------------------------------------------- | ---------------- | ----------------- |
+| 1   | Add `loadColumn` + `loadTask` middlewares (Step 2)                    | 25 min           | ⬜ To do          |
+| 2   | `columns` module: validation + service + controller + routes (Step 3) | 90 min           | ⬜ To do          |
+| 3   | `tasks` module: validation + service + controller + routes (Step 4)   | 75 min           | ⬜ To do          |
+| 4   | Populate nested columns/tasks in `GET /api/boards/:id` (Step 5)       | 15 min           | ⬜ To do          |
+| 5   | Mount routers + tsx reload smoke test (Step 6)                        | 10 min           | ⬜ To do          |
+| 6   | End-to-end manual verification (Step 7)                               | 45 min           | ⬜ To do          |
+|     | **Total**                                                             | **~4.5 hours**   | **Phase 3 to do** |
 
 ---
 
