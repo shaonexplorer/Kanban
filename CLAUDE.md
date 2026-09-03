@@ -13,8 +13,8 @@ Mini Kanban Board/
 │   ├── Mission.md              # Project purpose and success criteria
 │   ├── Techstack.md            # Tech stack decisions and planned libraries
 │   ├── Roadmap.md             # Phased implementation roadmap
-│   ├── Phase01/               # Phase 1 deliverables (Plan, Requirements, Validation) — Foundation
-│   └── Phase02/               # Phase 2 deliverables (Plan, Requirements, Validation) — Boards & Access Control
+│   ├── Phase01/               # Phase 1 specs: Plan.md, Requirements.md, Validation.md — Foundation
+│   └── Phase02/               # Phase 2 specs: Plan.md, Requirements.md, Validation.md — Boards & Access Control
 └── specs.md                     # Top-level spec summary
 ```
 
@@ -84,9 +84,9 @@ npm run prisma:studio
 - Prisma 7 client generated to `src/generated/prisma/` (uses `@prisma/adapter-pg` driver adapter — required by Prisma 7)
 - Validation: **`zod`** schemas in each feature module, run via a generic `validate(schema, source?)` middleware (`source` defaults to `"body"`; pass `"params"` to validate path segments or `"query"` for query strings — needed for UUID `:id` params)
 - Dev runner: **`tsx`** (replaces `ts-node-dev` for ESM compatibility)
-- Auth: `POST /api/auth/register`, `POST /api/auth/login` → returns signed JWT
-- Boards: `GET/POST /api/boards` (list/create), `GET/PATCH/DELETE /api/boards/:id` (detail/rename/soft-delete), `GET /api/boards/:id/members` (list members), `POST /api/boards/:id/members` (owner invites a registered user by `userId` or `email`), `DELETE /api/boards/:id/members/:userId` (owner removes a collaborator). All routes require `requireAuth`; `:id` routes chain `loadBoard` then `requireBoardAccess` (read paths) or `requireBoardOwner` (mutations); soft-deleted boards are treated as 404.
-- Board invitations: `GET /api/board-invitations` (caller's PENDING invites, joined with `boardTitle` + `inviterEmail`, newest first), `POST /api/board-invitations/:id/accept` (atomic `prisma.$transaction` that idempotently upserts a `BoardUser` row and flips the invitation to `ACCEPTED`), `POST /api/board-invitations/:id/decline` (single-write `DECLINED`). All routes require `requireAuth`; per-invitation actions verify `inviteeId === req.user.id` and reject with 403 / 404 / 409 (board soft-deleted, not addressee, or no longer PENDING).
+- Auth: `POST /api/auth/register` → `{ id, email, token }` (201); `POST /api/auth/login` → `{ email, token }` (200). Both issue a signed JWT; the password is never returned.
+- Boards: `GET /api/boards` (caller's boards, tagged `role: "OWNER" | "MEMBER"`, soft-deleted excluded), `POST /api/boards` (create, returns 201 with `{ id, title, ownerId, createdAt }`), `GET /api/boards/:id` (nested detail: `{ ..., columns: [], members: [{ userId, email, role, joinedAt }] }` — owner first, then accepted collaborators newest-first by `joinedAt`), `PATCH /api/boards/:id` (owner renames, 200), `DELETE /api/boards/:id` (owner soft-deletes via `deletedAt`, 204), `GET /api/boards/:id/members` (list), `POST /api/boards/:id/members` (owner invites a registered user — exactly one of `userId` (UUID) or `email`; 201 invitation, 400 owner/empty/both, 404 unknown email, 409 already-member or duplicate pending), `DELETE /api/boards/:id/members/:userId` (owner removes an accepted collaborator, 204; 400 on owner, 404 on non-member). All routes require `requireAuth`; `:id` routes chain `validate(BoardIdParamSchema, "params") → loadBoard → requireBoardAccess` (read paths) or `requireBoardOwner` (mutations); soft-deleted boards are treated as 404 on every read and every mutation. Param validation runs *before* `loadBoard` so a non-UUID id returns 400 rather than 404.
+- Board invitations: `GET /api/board-invitations` (caller's PENDING invites, joined with `boardTitle` + `inviterEmail`, newest first), `POST /api/board-invitations/:id/accept` (atomic `prisma.$transaction` that idempotently upserts a `BoardUser` row and flips the invitation to `ACCEPTED`; 200 with `{ boardId, invitationId, status: "ACCEPTED" }`), `POST /api/board-invitations/:id/decline` (single-write `DECLINED`; 200 with `{ invitationId, status: "DECLINED" }`). All routes require `requireAuth`; per-invitation actions verify `inviteeId === req.user.id` and reject with 403 / 404 / 409 (board soft-deleted, not addressee, or no longer PENDING).
 - Middleware: `authMiddleware` (attaches `req.user`) and `requireAuth` (rejects unauthenticated); `loadBoard` + `requireBoardAccess` + `requireBoardOwner` in `access-control.middleware.ts` — wire them as `requireAuth → loadBoard → requireBoardAccess|requireBoardOwner` on every `:id` board route
 - Health: `GET /health` — returns 200 `{status: "ok", timestamp, db: "up"}` when the DB responds to a `SELECT 1`, or 503 `{status: "degraded", timestamp, db: "down", error}` when it doesn't (useful for orchestrators/liveness probes)
 
@@ -138,17 +138,14 @@ Then mount it in `src/app.ts` (e.g. `app.use("/api/<name>", <name>Router)`) and 
 
 ## Testing
 
-No test framework is currently configured. The specs (`specs/Techstack.md`) plan for:
-- Backend: `jest` + `supertest`
-- Frontend: component tests (optional)
-- E2E: register → create board → share → move tasks
-
-Set up testing as part of Phase 5 (Polish & Testing) per `specs/Roadmap.md`.
+No automated test framework is configured yet. For now:
+- **Phase 1 (auth)** and **Phase 2 (boards & access control)** are validated end-to-end by `server/phase2-e2e.ps1` — a self-contained PowerShell script that hits the live dev server with 48 assertions covering the 13-step happy path plus key negative cases. Run it with `cd server && powershell -ExecutionPolicy Bypass -File .\phase2-e2e.ps1` after `npm run dev` is up on port 4000. Each run uses a unique email suffix so it is safe to re-run against any environment.
+- The specs (`specs/Techstack.md`) plan for: Backend: `jest` + `supertest`; Frontend: component tests (optional); E2E: register → create board → share → move tasks. Set up automated testing as part of Phase 5 (Polish & Testing) per `specs/Roadmap.md`.
 
 ## Git & Version Control
 
 - The root repository is the primary repo. `client/kanban-board-client/` has its own nested `.git` — changes inside it are tracked separately.
-- Commit messages should follow the project's existing style (current commit: `5f1008f Project Init`).
+- Commit messages should follow the project's existing style (conventional commits with a `type: subject` prefix — see `git log` for the most recent examples). The first commit was `5f1008f Project Init`; subsequent work uses `feat:`, `docs:`, etc.
 
 ## Specification Documents
 
