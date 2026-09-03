@@ -26,7 +26,11 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      // Kinetic Grid is a dark-mode-only design system — see
+      // design/design.md §Colors ("deep slate grounds") and §Layer 0
+      // ("Pure #0B0F19. Zero shadow."). Hard-pin the dark class so the
+      // tokens.css color vars resolve correctly on every render.
+      className={`dark ${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <Providers>{children}</Providers>

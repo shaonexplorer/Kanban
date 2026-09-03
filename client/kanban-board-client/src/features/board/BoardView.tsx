@@ -23,6 +23,7 @@ import {
 import { useBoardQuery, boardQueryKey } from "./useBoardQuery";
 import { useMoveTaskMutation } from "./useMoveTaskMutation";
 import { useMoveColumnMutation } from "./useMoveColumnMutation";
+import { useCreateTaskMutation } from "./useCreateTaskMutation";
 import {
   findColumnOfTask,
   moveTaskWithinBoard,
@@ -31,6 +32,10 @@ import {
 import { Column } from "./Column";
 import { TaskCard } from "./TaskCard";
 import type { BoardDetail, Column as ColumnT, Task } from "./types";
+import { Sidebar } from "./components/Sidebar";
+import { BoardHeader } from "./components/BoardHeader";
+import { BoardControlBar } from "./components/BoardControlBar";
+import { AddColumnGhost } from "./components/AddColumnGhost";
 
 export interface BoardViewProps {
   boardId: string;
@@ -43,10 +48,15 @@ type ActiveDrag =
 
 /**
  * Top-level board view. Owns the dnd-kit `DndContext`, the snapshot
- * ref, the in-flight set, and the toast. The two mutations are
+ * ref, the in-flight set, and the toast. The two move mutations are
  * called from `onDragEnd`; the live cross-column preview is applied
  * through `onDragOver` so the user sees the card land in the target
  * column before they release the pointer.
+ *
+ * The visual shell (sidebar / top bar / sub-header / columns /
+ * add-column ghost) is composed from the Stitch-style components
+ * in `./components/`. The dnd-kit handlers and the snapshot /
+ * optimistic-update contract are unchanged from Phase 4.
  */
 export default function BoardView({ boardId }: BoardViewProps) {
   const qc = useQueryClient();
@@ -54,6 +64,7 @@ export default function BoardView({ boardId }: BoardViewProps) {
   const snapshotRef = useRef<BoardDetail | null>(null);
   const moveTask = useMoveTaskMutation(boardId, snapshotRef);
   const moveColumn = useMoveColumnMutation(boardId, snapshotRef);
+  const createTask = useCreateTaskMutation(boardId);
 
   const [activeDrag, setActiveDrag] = useState<ActiveDrag>(null);
   const [inFlightIds, setInFlightIds] = useState<Set<string>>(() => new Set());
@@ -71,7 +82,7 @@ export default function BoardView({ boardId }: BoardViewProps) {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  // ----- dnd-kit handlers -------------------------------------------------
+  // ----- dnd-kit handlers (unchanged from Phase 4) --------------------
 
   function handleDragStart(event: DragStartEvent) {
     if (!board) return;
@@ -163,10 +174,7 @@ export default function BoardView({ boardId }: BoardViewProps) {
       | "task"
       | "column"
       | undefined;
-    const overType = over.data.current?.type as
-      | "task"
-      | "column"
-      | undefined;
+    const overType = over.data.current?.type as "task" | "column" | undefined;
 
     // Read the post-`onDragOver` cache so we use the same destination
     // the user has been previewing.
@@ -278,11 +286,11 @@ export default function BoardView({ boardId }: BoardViewProps) {
     if (snap) qc.setQueryData(boardQueryKey(boardId), snap);
   }
 
-  // ----- render states ----------------------------------------------------
+  // ----- render states -------------------------------------------------
 
   if (isLoading) {
     return (
-      <div className="flex flex-1 items-center justify-center text-sm text-zinc-500 dark:text-zinc-400">
+      <div className="flex flex-1 items-center justify-center text-sm text-outline pl-sidebar-expanded">
         Loading board…
       </div>
     );
@@ -290,18 +298,18 @@ export default function BoardView({ boardId }: BoardViewProps) {
 
   if (error || !board) {
     return (
-      <div className="flex flex-1 items-center justify-center p-8">
+      <div className="flex flex-1 items-center justify-center p-8 pl-sidebar-expanded">
         <div className="max-w-md text-center">
-          <p className="text-base font-medium text-zinc-900 dark:text-zinc-100">
+          <p className="font-headline-sm text-headline-sm text-on-surface">
             Failed to load board
           </p>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="mt-1 font-body-md text-body-md text-on-surface-variant">
             {error instanceof Error ? error.message : "Unknown error."}
           </p>
           <button
             type="button"
             onClick={() => refetch()}
-            className="mt-4 inline-flex items-center justify-center rounded-md bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-sm font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200"
+            className="mt-4 inline-flex items-center justify-center rounded-lg bg-primary text-on-primary px-4 py-2 font-label-ui-md text-label-ui-md hover:bg-primary-fixed-dim"
           >
             Retry
           </button>
@@ -312,89 +320,156 @@ export default function BoardView({ boardId }: BoardViewProps) {
 
   const columnIds = board.columns.map((c) => c.id);
   const isAnyDragging = activeDrag !== null;
+  const canCreateTask = board.columns.length > 0;
+  const firstColumnId = board.columns[0]?.id ?? null;
+
+  function handleNewTask({ title }: { title: string }) {
+    if (!firstColumnId) {
+      setToast("Create a column before adding tasks.");
+      return;
+    }
+    createTask.mutate(
+      { columnId: firstColumnId, title },
+      {
+        onError: () => {
+          setToast("Couldn't create task — please retry.");
+        },
+      },
+    );
+  }
 
   return (
-    <div className="flex flex-col h-full">
-      <header className="px-6 py-3 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between shrink-0">
-        <div>
-          <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-            {board.title}
-          </h1>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            {board.columns.length} column
-            {board.columns.length === 1 ? "" : "s"} · {board.members.length}{" "}
-            member{board.members.length === 1 ? "" : "s"}
-          </p>
-        </div>
-        <Link
-          href="/"
-          className="text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 underline"
-        >
-          Home
-        </Link>
-      </header>
+    <div className="min-h-screen bg-surface">
+      <Sidebar />
 
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCorners}
-        onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
-        onDragEnd={handleDragEnd}
-        onDragCancel={handleDragCancel}
-      >
-        <div className="flex-1 overflow-x-auto overflow-y-hidden">
-          <div className="flex gap-4 p-6 h-full items-start min-w-min">
-            {board.columns.length === 0 ? (
-              <div className="rounded-md border border-dashed border-zinc-300 dark:border-zinc-700 px-6 py-10 text-center text-sm text-zinc-500 dark:text-zinc-400">
-                No columns yet. Create one via
-                <code className="mx-1 px-1 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200">
-                  POST /api/boards/:id/columns
-                </code>
-                .
-              </div>
-            ) : (
-              <SortableContext
-                items={columnIds}
-                strategy={horizontalListSortingStrategy}
-              >
-                {board.columns.map((column) => (
-                  <Column
-                    key={column.id}
-                    column={column}
-                    inFlightIds={inFlightIds}
-                    isAnyDragging={isAnyDragging}
+      <div className="pl-sidebar-expanded">
+        <BoardHeader boardId={boardId} />
+
+        <main className="pt-16 min-h-screen flex flex-col">
+          <BoardControlBar
+            onCreateTask={handleNewTask}
+            canCreateTask={canCreateTask}
+          />
+
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCorners}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
+          >
+            <div className="flex-1 overflow-x-auto kanban-scroll px-space-xl py-space-lg select-none">
+              <div className="flex items-start gap-gutter-board min-w-max pb-space-3xl">
+                {board.columns.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-outline/30 px-space-xl py-space-3xl text-center">
+                    <p className="font-headline-sm text-headline-sm text-on-surface-variant">
+                      No columns yet
+                    </p>
+                    <p className="mt-space-xs font-body-md text-body-md text-outline">
+                      Create one via
+                      <code className="mx-1 px-1 py-0.5 rounded bg-surface-container-high text-on-surface font-label-mono-md text-label-mono-md">
+                        POST /api/boards/:id/columns
+                      </code>
+                      .
+                    </p>
+                    <Link
+                      href="/"
+                      className="mt-space-md inline-block font-label-ui-sm text-label-ui-sm text-primary hover:text-primary-fixed underline underline-offset-4"
+                    >
+                      Back home
+                    </Link>
+                  </div>
+                ) : (
+                  <SortableContext
+                    items={columnIds}
+                    strategy={horizontalListSortingStrategy}
+                  >
+                    {board.columns.map((column, columnIndex) => {
+                      // Stable per-column status token — first column
+                      // is "tertiary" (the active/pulse color in the
+                      // Stitch mock), then secondary / primary /
+                      // outline for the rest. Index-based so the
+                      // colors don't shuffle when a column moves.
+                      const statusTokens = [
+                        "tertiary",
+                        "secondary",
+                        "primary",
+                        "outline",
+                      ] as const;
+                      const statusToken =
+                        statusTokens[columnIndex % statusTokens.length];
+                      return (
+                        <Column
+                          key={column.id}
+                          column={column}
+                          inFlightIds={inFlightIds}
+                          isAnyDragging={isAnyDragging}
+                          statusToken={statusToken}
+                          onAddTask={(columnId) => {
+                            // Phase 5 will wire this to a per-column
+                            // task-creation dialog. For now, open
+                            // the same first-column flow and tell
+                            // the user which column they targeted.
+                            const title = window.prompt(
+                              `Task title for "${board.columns.find((c) => c.id === columnId)?.title ?? columnId}"`,
+                            );
+                            if (title && title.trim()) {
+                              createTask.mutate(
+                                { columnId, title: title.trim() },
+                                {
+                                  onError: () => {
+                                    setToast(
+                                      "Couldn't create task — please retry.",
+                                    );
+                                  },
+                                },
+                              );
+                            }
+                          }}
+                        />
+                      );
+                    })}
+                  </SortableContext>
+                )}
+
+                {board.columns.length > 0 ? (
+                  <AddColumnGhost
+                    onClick={() =>
+                      setToast("Add column flow lands in Phase 5.")
+                    }
                   />
-                ))}
-              </SortableContext>
-            )}
-          </div>
-        </div>
-
-        <DragOverlay>
-          {activeDrag?.type === "task" ? (
-            <TaskCard task={activeDrag.task} inFlight={false} />
-          ) : activeDrag?.type === "column" ? (
-            <div className="w-72 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 p-3 shadow-lg">
-              <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                {activeDrag.column.title}
-              </h2>
+                ) : null}
+              </div>
             </div>
-          ) : null}
-        </DragOverlay>
-      </DndContext>
+
+            <DragOverlay>
+              {activeDrag?.type === "task" ? (
+                <TaskCard task={activeDrag.task} inFlight={false} />
+              ) : activeDrag?.type === "column" ? (
+                <div className="w-column-width-min md:w-column-width-max rounded-xl bg-surface-container-lowest shadow-2xl p-space-sm">
+                  <h3 className="font-headline-sm text-headline-sm text-on-surface px-space-xs">
+                    {activeDrag.column.title}
+                  </h3>
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
+        </main>
+      </div>
 
       {toast ? (
         <div
           role="status"
           aria-live="polite"
-          className="fixed top-4 right-4 z-50 max-w-sm rounded-md border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950 px-4 py-2 text-sm text-red-800 dark:text-red-200 shadow-md flex items-start gap-3"
+          className="fixed top-4 right-4 z-50 max-w-sm rounded-lg border border-error bg-surface-container px-space-md py-space-sm font-body-sm text-body-sm text-error shadow-md flex items-start gap-space-sm"
         >
           <span className="flex-1">{toast}</span>
           <button
             type="button"
             onClick={() => setToast(null)}
             aria-label="Dismiss"
-            className="text-red-500 hover:text-red-700 dark:text-red-300 dark:hover:text-red-100"
+            className="text-error hover:text-on-error-container"
           >
             ×
           </button>

@@ -1,0 +1,185 @@
+/* Kinetic Grid design tokens.
+ *
+ * Every value is copied verbatim from design/design.md (the project's
+ * design system). The block is the v4 equivalent of the Stitch HTML's
+ * `tailwind.config = { theme: { extend: { ... } } }` runtime config;
+ * Tailwind v4 reads tokens from `@theme` blocks, not from a JS file.
+ *
+ * Each `--color-*` / `--font-*` / `--text-*` / `--rounded-*` /
+ * `--spacing-*` variable is automatically exposed as a Tailwind
+ * utility class, so this block produces the same `bg-surface`,
+ * `text-on-surface`, `font-headline-md`, `text-headline-md`,
+ * `p-space-md`, `gap-gutter-board`, `w-column-width-min`,
+ * `rounded-xl`, etc. classes that the Stitch HTML uses.
+ *
+ * One note on `--color-on-secondary`: design.md has `#3c00991` (8
+ * digits, invalid hex). The Stitch HTML uses `#3c0091`, which is the
+ * correct value that matches the rest of the secondary palette. We use
+ * the Stitch value here.
+ */
+
+@import "tailwindcss";
+
+@theme {
+  /* ---- Colors (51 tokens, verbatim from design.md) ----------------- */
+  --color-surface: #0b1326;
+  --color-surface-dim: #0b1326;
+  --color-surface-bright: #31394d;
+  --color-surface-container-lowest: #060e20;
+  --color-surface-container-low: #131b2e;
+  --color-surface-container: #171f33;
+  --color-surface-container-high: #222a3d;
+  --color-surface-container-highest: #2d3449;
+  --color-on-surface: #dae2fd;
+  --color-on-surface-variant: #c7c4d7;
+  --color-inverse-surface: #dae2fd;
+  --color-inverse-on-surface: #283044;
+  --color-outline: #908fa0;
+  --color-outline-variant: #464554;
+  --color-surface-tint: #c0c1ff;
+  --color-primary: #c0c1ff;
+  --color-on-primary: #1000a9;
+  --color-primary-container: #8083ff;
+  --color-on-primary-container: #0d0096;
+  --color-inverse-primary: #494bd6;
+  --color-secondary: #d0bcff;
+  --color-on-secondary: #3c0091;
+  --color-secondary-container: #571bc1;
+  --color-on-secondary-container: #c4abff;
+  --color-tertiary: #4cd7f6;
+  --color-on-tertiary: #003640;
+  --color-tertiary-container: #009eb9;
+  --color-on-tertiary-container: #002f38;
+  --color-error: #ffb4ab;
+  --color-on-error: #690005;
+  --color-error-container: #93000a;
+  --color-on-error-container: #ffdad6;
+  --color-primary-fixed: #e1e0ff;
+  --color-primary-fixed-dim: #c0c1ff;
+  --color-on-primary-fixed: #07006c;
+  --color-on-primary-fixed-variant: #2f2ebe;
+  --color-secondary-fixed: #e9ddff;
+  --color-secondary-fixed-dim: #d0bcff;
+  --color-on-secondary-fixed: #23005c;
+  --color-on-secondary-fixed-variant: #5516be;
+  --color-tertiary-fixed: #acedff;
+  --color-tertiary-fixed-dim: #4cd7f6;
+  --color-on-tertiary-fixed: #001f26;
+  --color-on-tertiary-fixed-variant: #004e5c;
+  --color-background: #0b1326;
+  --color-on-background: #dae2fd;
+  --color-surface-variant: #2d3449;
+
+  /* ---- Type scale (verbatim from design.md) ------------------------
+   *
+   * Each fontFamily maps to the var(--font-geist-sans) /
+   * var(--font-geist-mono) declared in src/app/layout.tsx, so the
+   * Stitch HTML's `font-headline-md` resolves to the same Geist family
+   * the rest of the app uses.
+   *
+   * fontSize entries are emitted by v4 as `text-{name}` utilities
+   * with the matching line-height / letter-spacing / font-weight.
+   */
+  --font-display-xl: var(--font-geist-sans);
+  --font-display-xl-mobile: var(--font-geist-sans);
+  --font-headline-lg: var(--font-geist-sans);
+  --font-headline-md: var(--font-geist-sans);
+  --font-headline-sm: var(--font-geist-sans);
+  --font-body-lg: var(--font-geist-sans);
+  --font-body-md: var(--font-geist-sans);
+  --font-body-sm: var(--font-geist-sans);
+  --font-label-ui-md: var(--font-geist-sans);
+  --font-label-ui-sm: var(--font-geist-sans);
+  --font-label-mono-md: var(--font-geist-mono);
+  --font-label-mono-sm: var(--font-geist-mono);
+
+  --text-display-xl: 36px;
+  --text-display-xl--line-height: 44px;
+  --text-display-xl--letter-spacing: -0.03em;
+  --text-display-xl--font-weight: 600;
+
+  --text-display-xl-mobile: 28px;
+  --text-display-xl-mobile--line-height: 36px;
+  --text-display-xl-mobile--letter-spacing: -0.025em;
+  --text-display-xl-mobile--font-weight: 600;
+
+  --text-headline-lg: 24px;
+  --text-headline-lg--line-height: 32px;
+  --text-headline-lg--letter-spacing: -0.02em;
+  --text-headline-lg--font-weight: 600;
+
+  --text-headline-md: 18px;
+  --text-headline-md--line-height: 26px;
+  --text-headline-md--letter-spacing: -0.015em;
+  --text-headline-md--font-weight: 600;
+
+  --text-headline-sm: 15px;
+  --text-headline-sm--line-height: 22px;
+  --text-headline-sm--letter-spacing: -0.01em;
+  --text-headline-sm--font-weight: 600;
+
+  --text-body-lg: 15px;
+  --text-body-lg--line-height: 24px;
+  --text-body-lg--letter-spacing: -0.005em;
+  --text-body-lg--font-weight: 400;
+
+  --text-body-md: 13px;
+  --text-body-md--line-height: 20px;
+  --text-body-md--letter-spacing: 0em;
+  --text-body-md--font-weight: 400;
+
+  --text-body-sm: 12px;
+  --text-body-sm--line-height: 18px;
+  --text-body-sm--letter-spacing: 0.005em;
+  --text-body-sm--font-weight: 400;
+
+  --text-label-ui-md: 12px;
+  --text-label-ui-md--line-height: 16px;
+  --text-label-ui-md--letter-spacing: 0.01em;
+  --text-label-ui-md--font-weight: 500;
+
+  --text-label-ui-sm: 11px;
+  --text-label-ui-sm--line-height: 14px;
+  --text-label-ui-sm--letter-spacing: 0.015em;
+  --text-label-ui-sm--font-weight: 500;
+
+  --text-label-mono-md: 12px;
+  --text-label-mono-md--line-height: 16px;
+  --text-label-mono-md--letter-spacing: -0.01em;
+  --text-label-mono-md--font-weight: 500;
+
+  --text-label-mono-sm: 11px;
+  --text-label-mono-sm--line-height: 14px;
+  --text-label-mono-sm--letter-spacing: 0em;
+  --text-label-mono-sm--font-weight: 500;
+
+  /* ---- Radius (verbatim from design.md) ----------------------------
+   *
+   * Stitch re-maps `xl` (12px) and `full` (9999px) but keeps
+   * `rounded` (no suffix) at 4px. In Tailwind v4, `rounded` (no
+   * suffix) resolves to `--radius`, so we set that to 4px to match
+   * the Stitch default.
+   */
+  --radius: 0.25rem;
+  --radius-sm: 0.125rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --radius-full: 9999px;
+
+  /* ---- Spacing (verbatim from design.md) --------------------------- */
+  --spacing-column-width-min: 18rem;
+  --spacing-column-width-max: 22rem;
+  --spacing-gutter-board: 0.875rem;
+  --spacing-sidebar-collapsed: 3.5rem;
+  --spacing-sidebar-expanded: 15rem;
+  --spacing-space-2xs: 0.125rem;
+  --spacing-space-xs: 0.25rem;
+  --spacing-space-sm: 0.5rem;
+  --spacing-space-md: 0.75rem;
+  --spacing-space-base: 1rem;
+  --spacing-space-lg: 1.25rem;
+  --spacing-space-xl: 1.5rem;
+  --spacing-space-2xl: 2rem;
+  --spacing-space-3xl: 3rem;
+}
