@@ -58,7 +58,10 @@ model Column {
   id       String @id @default(uuid())
   title    String
   boardId  String
-  position Int    // Ordering within the board
+  // Lexicographically sortable fractional index (Phase 4). New columns
+  // append at lexoPosition.between(max, null); see
+  // server/src/common/utils/lexoPosition.ts.
+  position String @default("a0")
   board    Board  @relation(fields: [boardId], references: [id])
   tasks    Task[]
 }
@@ -69,7 +72,9 @@ model Task {
   title       String
   description String?  // Optional
   columnId    String
-  position    Int      // Ordering within the column
+  // Lexicographically sortable fractional index within the column
+  // (Phase 4). See server/src/common/utils/lexoPosition.ts.
+  position    String   @default("a0")
   createdAt   DateTime @default(now())
   column      Column   @relation(fields: [columnId], references: [id], onDelete: Cascade)
 }
