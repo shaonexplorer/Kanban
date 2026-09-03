@@ -329,15 +329,15 @@ checklist.
 
 ## Execution Order
 
-| # | Task | Estimated Effort |
-|---|---|---|
-| 1 | Schema migration (Step 1) | 20 min |
-| 2 | Access-control middleware (Step 2) | 25 min |
-| 3 | `boards` module: validation + service + controller + routes (Step 3) | 90 min |
-| 4 | `board-invitations` module (Step 4) | 45 min |
-| 5 | Mount routers + tsx reload smoke test (Step 5) | 10 min |
-| 6 | End-to-end manual verification (Step 6) | 45 min |
-|   | **Total** | **~3.75 hours** |
+| # | Task | Estimated Effort | Status |
+|---|---|---|---|
+| 1 | Schema migration (Step 1) | 20 min | [x] Complete |
+| 2 | Access-control middleware (Step 2) | 25 min | [x] Complete |
+| 3 | `boards` module: validation + service + controller + routes (Step 3) | 90 min | [x] Complete |
+| 4 | `board-invitations` module (Step 4) | 45 min | [x] Complete |
+| 5 | Mount routers + tsx reload smoke test (Step 5) | 10 min | [x] Complete |
+| 6 | End-to-end manual verification (Step 6) | 45 min | [x] Complete |
+|   | **Total** | **~3.75 hours** | **Phase 2 Complete** |
 
 ---
 
