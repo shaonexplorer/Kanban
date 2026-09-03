@@ -1,13 +1,17 @@
-import type { NextFunction, Request, RequestHandler } from "express";
+import type { NextFunction, RequestHandler } from "express";
 import { prisma } from "../../lib/prisma.js";
 import { HttpError } from "../errors/HttpError.js";
 
 /**
- * Source location on the request object where the board id can be found.
- * - "params"  → `req.params[key]`     (e.g. `/api/boards/:id/...`)
+ * Source location on the request object where an id can be found.
+ * - "params"  → `req.params[key]`     (e.g. `/api/.../:id/...`)
  * - "body"    → `req.body[key]`        (rarely used — included for symmetry)
  */
-type BoardIdSource = "params" | "body";
+type IdSource = "params" | "body";
+
+// ---------------------------------------------------------------------------
+// loadBoard
+// ---------------------------------------------------------------------------
 
 /**
  * Load a board by id and attach it to `req.board`.
@@ -20,7 +24,7 @@ type BoardIdSource = "params" | "body";
  * (or `requireBoardOwner`) after it for that.
  */
 export function loadBoard(
-  source: BoardIdSource = "params",
+  source: IdSource = "params",
   key: string = "id"
 ): RequestHandler {
   return async (req, _res, next) => {
@@ -42,6 +46,10 @@ export function loadBoard(
     }
   };
 }
+
+// ---------------------------------------------------------------------------
+// requireBoardAccess / requireBoardOwner
+// ---------------------------------------------------------------------------
 
 /**
  * Require that the authenticated user has access to the board on `req.board`.
@@ -118,5 +126,106 @@ export const requireBoardOwner: RequestHandler = async (
     next();
   } catch (err) {
     next(err);
-  }
+  };
 };
+
+// ---------------------------------------------------------------------------
+// loadColumn — Phase 3
+// ---------------------------------------------------------------------------
+
+/**
+ * Load a column by id (with its parent board) and attach the result to
+ * `req.column`. The attached shape is `Column & { board: Board }` so
+ * downstream code can reach the board without a second query.
+ *
+ * Treats the column as 404 when:
+ *   - the column id doesn't match any row, OR
+ *   - the parent board is soft-deleted.
+ *
+ * This middleware does NOT authorize the request — chain it into
+ * `requireBoardAccess` (or `requireBoardOwner`) after it for that.
+ * The chained access check reads `req.board` (populated here), so the
+ * existing middlewares work without modification.
+ */
+export function loadColumn(
+  source: IdSource = "params",
+  key: string = "id"
+): RequestHandler {
+  return async (req, _res, next) => {
+    try {
+      const columnId = req[source]?.[key];
+      if (typeof columnId !== "string" || columnId.length === 0) {
+        throw new HttpError(400, "Column id is required");
+      }
+
+      const column = await prisma.column.findUnique({
+        where: { id: columnId },
+        include: { board: true },
+      });
+      if (!column || column.board.deletedAt !== null) {
+        throw new HttpError(404, "Column not found");
+      }
+
+      req.column = column;
+      // Expose the board on `req.board` so the existing
+      // `requireBoardAccess` / `requireBoardOwner` middlewares — which
+      // read from `req.board` — work without changes.
+      req.board = column.board;
+      next();
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+// ---------------------------------------------------------------------------
+// loadTask — Phase 3
+// ---------------------------------------------------------------------------
+
+/**
+ * Load a task by id (with its parent column and that column's board) and
+ * attach the result to `req.task`. The attached shape is
+ * `Task & { column: Column & { board: Board } }` so downstream code can
+ * reach the column and board without a second query.
+ *
+ * Treats the task as 404 when:
+ *   - the task id doesn't match any row, OR
+ *   - the parent column doesn't exist (orphaned), OR
+ *   - the parent board is soft-deleted.
+ *
+ * This middleware does NOT authorize the request — chain it into
+ * `requireBoardAccess` (or `requireBoardOwner`) after it for that.
+ * The chained access check reads `req.board` (populated here).
+ */
+export function loadTask(
+  source: IdSource = "params",
+  key: string = "id"
+): RequestHandler {
+  return async (req, _res, next) => {
+    try {
+      const taskId = req[source]?.[key];
+      if (typeof taskId !== "string" || taskId.length === 0) {
+        throw new HttpError(400, "Task id is required");
+      }
+
+      const task = await prisma.task.findUnique({
+        where: { id: taskId },
+        include: { column: { include: { board: true } } },
+      });
+      if (!task || task.column.board.deletedAt !== null) {
+        throw new HttpError(404, "Task not found");
+      }
+
+      req.task = task;
+      // Expose the board and column on `req.board` / `req.column` so
+      // the existing `requireBoardAccess` / `requireBoardOwner`
+      // middlewares (and any future column-scoped checks) work without
+      // modification.
+      req.board = task.column.board;
+      req.column = task.column;
+      next();
+    } catch (err) {
+      next(err);
+    }
+  };
+}
