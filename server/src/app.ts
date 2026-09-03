@@ -8,6 +8,7 @@ import { boardInvitationsRouter } from "./modules/board-invitations/index.js";
 import { boardsRouter } from "./modules/boards/index.js";
 import { columnsRouter } from "./modules/columns/index.js";
 import { healthRouter } from "./modules/health/index.js";
+import { tasksRouter } from "./modules/tasks/index.js";
 
 /**
  * Creates and configures the Express application.
@@ -42,6 +43,12 @@ function createApp(): Application {
   // /api/columns/:id subtrees — mounted on `/api` so each route defines
   // its own full path. Single mount point, no path collisions.
   app.use("/api", columnsRouter);
+  // The tasks router owns BOTH /api/columns/:columnId/tasks and
+  // /api/tasks/:id subtrees — same `/api` mount-point pattern as
+  // columns. No collisions with the columns router: its task-scoped
+  // paths are `/tasks/...` and column-scoped paths share a different
+  // URL segment.
+  app.use("/api", tasksRouter);
 
   // Central error handler MUST be registered last.
   app.use(errorMiddleware);
