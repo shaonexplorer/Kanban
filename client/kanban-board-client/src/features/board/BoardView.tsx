@@ -25,6 +25,7 @@ import { useBoardQuery, boardQueryKey } from "./useBoardQuery";
 import { useMoveTaskMutation } from "./useMoveTaskMutation";
 import { useMoveColumnMutation } from "./useMoveColumnMutation";
 import { useCreateTaskMutation } from "./useCreateTaskMutation";
+import { useCreateColumnMutation } from "./useCreateColumnMutation";
 import { useUpdateTaskMutation } from "./useUpdateTaskMutation";
 import { useDeleteTaskMutation } from "./useDeleteTaskMutation";
 import { useCreateBoardMutation } from "./useCreateBoardMutation";
@@ -100,6 +101,7 @@ export default function BoardView({ boardId }: BoardViewProps) {
   const moveTask = useMoveTaskMutation(boardId, snapshotRef);
   const moveColumn = useMoveColumnMutation(boardId, snapshotRef);
   const createTask = useCreateTaskMutation(boardId);
+  const createColumn = useCreateColumnMutation(boardId);
   // Phase 5 Step 5: the new mutations backing the TaskModal
   // (title autosave, star, trash) and the ShareBoardModal
   // (invite, remove, link-sharing toggle) and the
@@ -688,6 +690,24 @@ export default function BoardView({ boardId }: BoardViewProps) {
     );
   }
 
+  // Add a new column. Called by the desktop/tablet `AddColumnGhost`
+  // and by the compact tier's empty-state ghost. The mutation
+  // optimistically appends a placeholder column; on success the
+  // cache is swapped for the server-authoritative row.
+  function handleNewColumn({ title }: { title: string }) {
+    createColumn.mutate(
+      { title },
+      {
+        onError: () => {
+          setToast({
+            message: "Couldn't create column — please retry.",
+            variant: "error",
+          });
+        },
+      },
+    );
+  }
+
   // The kanban area's left padding tracks the visible sidebar:
   //   - On compact / tablet: no padding (the sidebar is a drawer).
   //   - On desktop expanded: pl-sidebar-expanded.
@@ -749,6 +769,8 @@ export default function BoardView({ boardId }: BoardViewProps) {
                 setToast({ message: msg, variant: "error" })
               }
               onSelectTask={(taskId) => openTask(boardId, taskId)}
+              onCreateColumn={handleNewColumn}
+              createColumnInFlight={createColumn.isPending}
             />
           ) : (
             <DndContext
@@ -765,17 +787,18 @@ export default function BoardView({ boardId }: BoardViewProps) {
               >
                 <div className="flex items-start gap-gutter-board min-w-max pb-space-3xl">
                   {board.columns.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-outline/30 px-space-xl py-space-3xl text-center">
-                      <p className="font-headline-sm text-headline-sm text-on-surface-variant">
+                    <div className="flex flex-col items-center gap-space-lg">
+                      <p className="font-headline-sm text-headline-sm text-on-surface-variant text-center">
                         No columns yet
                       </p>
-                      <p className="mt-space-xs font-body-md text-body-md text-outline">
-                        Create one via
-                        <code className="mx-1 px-1 py-0.5 rounded bg-surface-container-high text-on-surface font-label-mono-md text-label-mono-md">
-                          POST /api/boards/:id/columns
-                        </code>
-                        .
+                      <p className="font-body-md text-body-md text-outline text-center max-w-sm">
+                        Use the tile below to add your first column. Each
+                        column becomes a workflow status on this board.
                       </p>
+                      <AddColumnGhost
+                        onCreate={handleNewColumn}
+                        inFlight={createColumn.isPending}
+                      />
                       <Link
                         href="/"
                         className="mt-space-md inline-block font-label-ui-sm text-label-ui-sm text-primary hover:text-primary-fixed underline underline-offset-4"
@@ -811,12 +834,8 @@ export default function BoardView({ boardId }: BoardViewProps) {
 
                   {board.columns.length > 0 ? (
                     <AddColumnGhost
-                      onClick={() =>
-                        setToast({
-                          message: "Add column flow lands in Phase 5.",
-                          variant: "info",
-                        })
-                      }
+                      onCreate={handleNewColumn}
+                      inFlight={createColumn.isPending}
                     />
                   ) : null}
                 </div>

@@ -146,6 +146,27 @@ export function moveColumn(
     .then((r) => r.data);
 }
 
+/** Response from `POST /api/boards/:boardId/columns` — a freshly
+ *  appended column in the server's wire shape. The cache side of
+ *  the create-column mutation maps this to a full `Column` (with
+ *  an empty `tasks` array) so the new column appears in the
+ *  board view without a follow-up refetch. */
+export interface ColumnMutationResult {
+  id: string;
+  title: string;
+  boardId: string;
+  position: number;
+}
+
+export function createColumn(
+  boardId: string,
+  body: { title: string },
+): Promise<ColumnMutationResult> {
+  return api
+    .post<ColumnMutationResult>(`/boards/${boardId}/columns`, body)
+    .then((r) => r.data);
+}
+
 /**
  * Re-export the `BoardMember` type for callers that want to
  * construct a synthetic optimistic member row (the

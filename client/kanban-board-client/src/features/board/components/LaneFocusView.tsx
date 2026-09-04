@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "./Icon";
+import { AddColumnGhost } from "./AddColumnGhost";
 import { Column } from "../Column";
 import type { BoardDetail } from "../types";
 
@@ -25,6 +26,16 @@ export interface LaneFocusViewProps {
    *  (BoardView) uses this to set the lifted `selectedTaskId` and
    *  open the `TaskModal`. */
   onSelectTask?: (taskId: string) => void;
+  /** Called when the user submits a new column title from the
+   *  empty-state ghost. Wired to `useCreateColumnMutation.mutate`
+   *  in `BoardView`. */
+  onCreateColumn?: (args: { title: string }) => void;
+  /** Disable the empty-state column input while a create-column
+   *  mutation is in flight. */
+  createColumnInFlight?: boolean;
+  /** Optional error message to surface in the empty-state column
+   *  form. Typically set by the parent from a toast. */
+  createColumnErrorMessage?: string | null;
 }
 
 /**
@@ -54,6 +65,9 @@ export function LaneFocusView({
   isAnyDragging,
   onQuickAddError,
   onSelectTask,
+  onCreateColumn,
+  createColumnInFlight = false,
+  createColumnErrorMessage = null,
 }: LaneFocusViewProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const stripRef = useRef<HTMLDivElement | null>(null);
@@ -76,17 +90,22 @@ export function LaneFocusView({
 
   if (columns.length === 0) {
     return (
-      <div className="px-space-xl py-space-3xl text-center">
-        <p className="font-headline-sm text-headline-sm text-on-surface-variant">
-          No columns yet
-        </p>
-        <p className="mt-space-xs font-body-md text-body-md text-outline">
-          Create one via{" "}
-          <code className="px-1 py-0.5 rounded bg-surface-container-high text-on-surface font-label-mono-md text-label-mono-md">
-            POST /api/boards/:id/columns
-          </code>
-          .
-        </p>
+      <div className="px-space-xl py-space-3xl flex flex-col items-center gap-space-lg">
+        <div className="text-center">
+          <p className="font-headline-sm text-headline-sm text-on-surface-variant">
+            No columns yet
+          </p>
+          <p className="mt-space-xs font-body-md text-body-md text-outline">
+            Use the tile below to add your first column.
+          </p>
+        </div>
+        {onCreateColumn ? (
+          <AddColumnGhost
+            onCreate={onCreateColumn}
+            inFlight={createColumnInFlight}
+            errorMessage={createColumnErrorMessage}
+          />
+        ) : null}
       </div>
     );
   }
