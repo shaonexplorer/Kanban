@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   closestCorners,
@@ -42,8 +43,11 @@ import { ScrollToEndChevron } from "./components/ScrollToEndChevron";
 import { ShareBoardModal } from "./components/ShareBoardModal";
 import { CreateBoardDrawer } from "./components/CreateBoardDrawer";
 import { useAuth } from "@/features/auth/useAuth";
+import { readErrorStatus } from "@/lib/api";
 import { useMediaQuery } from "@/lib/useMediaQuery";
 import { Toast } from "./components/Toast";
+import { BoardSkeleton } from "./components/BoardSkeleton";
+import { BoardErrorState, type BoardErrorReason } from "./components/BoardErrorState";
 
 export interface BoardViewProps {
   boardId: string;
@@ -133,7 +137,7 @@ export default function BoardView({ boardId }: BoardViewProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  const { userId, userEmail } = useAuth();
+  const { userId, userEmail, clearToken } = useAuth();
 
   // Sensors: keyboard only on desktop (compact disables the entire
   // dnd-kit context; tablet uses the pointer sensor only). The
@@ -368,31 +372,137 @@ export default function BoardView({ boardId }: BoardViewProps) {
 
   // ----- render states -------------------------------------------------
 
+  // Phase 5 Step 4: downcast the `useBoardQuery` error to a
+  // discriminated reason. The `BoardErrorState` component handles
+  // the per-status copy + button(s) so this view stays thin.
+  const errorReason = useBoardErrorReason(error);
+
+  // Sign-out handler for the `auth` error branch. The board view
+  // owns the router; `clearToken` lives on `AuthContext`. The
+  // handler is created unconditionally (no hook inside) so the
+  // callback identity stays stable across renders and the
+  // `BoardErrorState`'s "Sign in again" button is wired the moment
+  // the 401 is detected.
+  const router = useRouter();
+  function handleSignOut() {
+    clearToken();
+    router.replace("/");
+  }
+
+  // ----- chrome --------------------------------------------------------
+  //
+  // The sidebar, header, and control bar are part of the layout
+  // chrome — they stay mounted across the loading, error, and
+  // ready states so the user never sees a layout shift between
+  // data fetch and the real board. The `<main>` slot is the only
+  // thing that swaps (skeleton / error / board).
+
+  // Show the hamburger on compact / tablet; show the chevron on
+  // desktop. They are mutually exclusive.
+  const showSidebarToggle = !isDesktopTier;
+  const showCollapseToggle = isDesktopTier;
+
+  // The kanban area's left padding tracks the visible sidebar:
+  //   - On compact / tablet: no padding (the sidebar is a drawer).
+  //   - On desktop expanded: pl-sidebar-expanded.
+  //   - On desktop collapsed: pl-sidebar-collapsed.
+  const mainLeftClass = isDesktopTier
+    ? sidebarCollapsed
+      ? "pl-sidebar-collapsed"
+      : "pl-sidebar-expanded"
+    : "";
+
+  // Phase 5 Step 4: if the board is still loading, render the
+  // chrome with a skeleton in place of the columns. The skeleton
+  // matches the real board's column widths so the layout doesn't
+  // shift when the data lands.
   if (isLoading) {
     return (
-      <div className="flex flex-1 items-center justify-center text-sm text-outline pl-sidebar-expanded">
-        Loading board…
+      <div className="min-h-screen bg-surface">
+        {isDesktopTier ? (
+          <Sidebar collapsed={sidebarCollapsed} />
+        ) : null}
+        {!isDesktopTier ? (
+          <SidebarOverlay
+            open={sidebarOpen}
+            onClose={() => setSidebarOpen(false)}
+            tier={tier === "compact" ? "compact" : "tablet"}
+          />
+        ) : null}
+        <div
+          className={[
+            mainLeftClass,
+            "transition-[padding-left] duration-(--duration-slow) ease-standard",
+          ].join(" ")}
+        >
+          <BoardHeader
+            boardId={boardId}
+            showSidebarToggle={showSidebarToggle}
+            showCollapseToggle={showCollapseToggle}
+            sidebarCollapsed={isDesktopTier ? sidebarCollapsed : false}
+            onToggleSidebar={() => setSidebarOpen((v) => !v)}
+            onToggleSidebarCollapse={() => setSidebarCollapsed((v) => !v)}
+          />
+          <main className="pt-16 min-h-screen flex flex-col">
+            <BoardControlBar
+              onCreateTask={() => undefined}
+              canCreateTask={false}
+              onOpenShareModal={() => undefined}
+              onOpenCreateBoard={() => undefined}
+            />
+            <BoardSkeleton tier={tier} />
+          </main>
+        </div>
       </div>
     );
   }
 
+  // Phase 5 Step 4: per-status error surface (network / 401 / 403 /
+  // 404 / other). Render the chrome so the user keeps the header,
+  // sidebar, and control bar; the error card sits in the same
+  // `<main>` slot the real board would.
   if (error || !board) {
     return (
-      <div className="flex flex-1 items-center justify-center p-8 pl-sidebar-expanded">
-        <div className="max-w-md text-center">
-          <p className="font-headline-sm text-headline-sm text-on-surface">
-            Failed to load board
-          </p>
-          <p className="mt-1 font-body-md text-body-md text-on-surface-variant">
-            {error instanceof Error ? error.message : "Unknown error."}
-          </p>
-          <button
-            type="button"
-            onClick={() => refetch()}
-            className="mt-4 inline-flex items-center justify-center rounded-lg bg-primary text-on-primary px-4 py-2 font-label-ui-md text-label-ui-md hover:bg-primary-fixed-dim"
-          >
-            Retry
-          </button>
+      <div className="min-h-screen bg-surface">
+        {isDesktopTier ? (
+          <Sidebar collapsed={sidebarCollapsed} />
+        ) : null}
+        {!isDesktopTier ? (
+          <SidebarOverlay
+            open={sidebarOpen}
+            onClose={() => setSidebarOpen(false)}
+            tier={tier === "compact" ? "compact" : "tablet"}
+          />
+        ) : null}
+        <div
+          className={[
+            mainLeftClass,
+            "transition-[padding-left] duration-(--duration-slow) ease-standard",
+          ].join(" ")}
+        >
+          <BoardHeader
+            boardId={boardId}
+            showSidebarToggle={showSidebarToggle}
+            showCollapseToggle={showCollapseToggle}
+            sidebarCollapsed={isDesktopTier ? sidebarCollapsed : false}
+            onToggleSidebar={() => setSidebarOpen((v) => !v)}
+            onToggleSidebarCollapse={() => setSidebarCollapsed((v) => !v)}
+          />
+          <main className="pt-16 min-h-screen flex flex-col">
+            <BoardControlBar
+              onCreateTask={() => undefined}
+              canCreateTask={false}
+              onOpenShareModal={() => undefined}
+              onOpenCreateBoard={() => undefined}
+            />
+            <BoardErrorState
+              reason={errorReason}
+              onRetry={() => {
+                refetch();
+              }}
+              onSignOut={handleSignOut}
+            />
+          </main>
         </div>
       </div>
     );
@@ -436,16 +546,8 @@ export default function BoardView({ boardId }: BoardViewProps) {
   //   - On compact / tablet: no padding (the sidebar is a drawer).
   //   - On desktop expanded: pl-sidebar-expanded.
   //   - On desktop collapsed: pl-sidebar-collapsed.
-  const mainLeftClass = isDesktopTier
-    ? sidebarCollapsed
-      ? "pl-sidebar-collapsed"
-      : "pl-sidebar-expanded"
-    : "";
-
-  // Show the hamburger on compact / tablet; show the chevron on
-  // desktop. They are mutually exclusive.
-  const showSidebarToggle = !isDesktopTier;
-  const showCollapseToggle = isDesktopTier;
+  // (These are computed once at the top of the render so the
+  //  loading / error / ready states can all reuse them.)
 
   return (
     <div className="min-h-screen bg-surface">
@@ -640,4 +742,37 @@ export default function BoardView({ boardId }: BoardViewProps) {
       />
     </div>
   );
+}
+
+/**
+ * Downcast a `useBoardQuery` error to a `BoardErrorReason`.
+ *
+ *   - 401 → `auth` (session expired; the error state routes the
+ *     user to `/` via `clearToken`).
+ *   - 403 → `forbidden` (no access; the error state links home).
+ *   - 404 → `not_found` (deleted board; the error state links home).
+ *   - any other HTTP status, or a transport / unknown error →
+ *     `unknown` with the original message (if we can read one).
+ *   - no error at all → `unknown` with no message (the caller
+ *     shouldn't hit this branch in practice, but the type is
+ *     `BoardErrorReason` and the empty case is harmless).
+ */
+function useBoardErrorReason(error: unknown): BoardErrorReason {
+  // Read once, with a memo — the error reference is stable across
+  // re-renders unless the query state itself changes, so this
+  // doesn't add meaningful overhead.
+  const status = readErrorStatus(error);
+  if (status === null) {
+    // No HTTP response was received (network drop, DNS failure,
+    // client-side throw). Treat as a network error.
+    return error ? { kind: "network" } : { kind: "unknown" };
+  }
+  if (status === 401) return { kind: "auth" };
+  if (status === 403) return { kind: "forbidden" };
+  if (status === 404) return { kind: "not_found" };
+  const message =
+    typeof error === "object" && error !== null && "message" in error
+      ? String((error as { message: unknown }).message)
+      : undefined;
+  return { kind: "unknown", message };
 }

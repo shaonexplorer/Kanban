@@ -186,7 +186,27 @@ export function ColumnShell({
           ))}
         </SortableContext>
 
-        {column.tasks.length === 0 ? (
+        {/* Empty-state affordance. On the compact tier (where
+         * dnd-kit is disabled) the "Drop task here" hint is a
+         * non-functional affordance — show a "No tasks yet" line
+         * instead and pre-open the quick-add form so the user can
+         * add the first task without an extra click. On tablet /
+         * desktop the "Drop task here" hint is the right
+         * affordance (drag-and-drop is the primary task-add flow). */}
+        {column.tasks.length === 0 && compactMode ? (
+          <div className="flex flex-col items-center justify-center gap-space-xs py-space-sm text-outline">
+            <Icon name="add" className="w-5 h-5" />
+            <p className="font-label-ui-md text-label-ui-md text-center">
+              No tasks yet
+              <br />
+              <span className="font-body-sm text-body-sm text-on-surface-variant">
+                add one to get started
+              </span>
+            </p>
+          </div>
+        ) : null}
+
+        {column.tasks.length === 0 && !compactMode ? (
           <div
             className={[
               "w-full h-20 rounded-lg",
@@ -204,10 +224,16 @@ export function ColumnShell({
           </div>
         ) : null}
 
+        {/* On compact, pre-open the quick-add form when the column
+         * is empty so the user has an obvious next step. The form
+         * closes itself on a successful submit, and the parent
+         * (ColumnShell) can also close it via `setQuickAddOpen` if
+         * the user opens it from the header `+` button on a
+         * non-empty column. */}
         <QuickAddTask
           boardId={boardId}
           columnId={column.id}
-          open={quickAddOpen}
+          open={compactMode && column.tasks.length === 0 ? true : quickAddOpen}
           onOpenChange={setQuickAddOpen}
           onError={onQuickAddError}
         />
