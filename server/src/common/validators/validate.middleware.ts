@@ -25,13 +25,24 @@ export type ValidateSource = "body" | "params" | "query";
  *                strings.
  */
 export const validate =
-  (schema: ZodSchema, source: ValidateSource = "body"): RequestHandler =>
-  (req, _res, next) => {
-    const result = schema.safeParse(req[source]);
-    if (!result.success) {
-      next(result.error);
-      return;
-    }
-    req[source] = result.data;
-    next();
+  (schema: ZodSchema, source: ValidateSource = "body"): RequestHandler => {
+    const handler: RequestHandler = (req, _res, next) => {
+      const result = schema.safeParse(req[source]);
+      if (!result.success) {
+        next(result.error);
+        return;
+      }
+      req[source] = result.data;
+      next();
+    };
+    // Marker so `scripts/audit-routes.mjs` (Phase 5 Step 7) can detect
+    // the validate middleware by introspection of the Express router
+    // stack — we mark the function itself rather than the schema so the
+    // audit doesn't have to import the zod schemas to know which
+    // middleware is a validator.
+    Object.defineProperty(handler, "kanbanValidate", {
+      value: { schema, source },
+      enumerable: false,
+    });
+    return handler;
   };
