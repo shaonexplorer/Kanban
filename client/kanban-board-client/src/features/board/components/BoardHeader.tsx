@@ -82,7 +82,9 @@ export function BoardHeader({
         {showCollapseToggle ? (
           <button
             type="button"
-            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={
+              sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"
+            }
             aria-expanded={!sidebarCollapsed}
             onClick={onToggleSidebarCollapse}
             className="size-9 shrink-0 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
@@ -94,12 +96,12 @@ export function BoardHeader({
           </button>
         ) : null}
         <div className="flex items-center gap-space-xs font-body-sm text-body-sm text-outline min-w-0">
-          <span className="hidden sm:inline hover:text-on-surface transition-colors cursor-pointer truncate">
+          {/* <span className="hidden sm:inline hover:text-on-surface transition-colors cursor-pointer truncate">
             Core Product Engine
           </span>
           <span className="hidden sm:inline">
             <Icon name="chevron_right" className="w-5 h-5 shrink-0" />
-          </span>
+          </span> */}
           <span className="font-headline-sm text-headline-sm text-on-surface truncate">
             {title}
           </span>

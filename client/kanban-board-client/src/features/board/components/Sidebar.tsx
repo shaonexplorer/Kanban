@@ -72,9 +72,7 @@ export function Sidebar({ collapsed = false }: SidebarProps = {}) {
   const { userEmail, signOut } = useAuth();
   const boards = useMyBoardsQuery();
 
-  const widthClass = collapsed
-    ? "w-sidebar-collapsed"
-    : "w-sidebar-expanded";
+  const widthClass = collapsed ? "w-sidebar-collapsed" : "w-sidebar-expanded";
 
   // Sign-out handler for the bottom user card's logout button
   // (Phase 5 Step 8). `signOut` clears the httpOnly `token`
@@ -104,7 +102,11 @@ export function Sidebar({ collapsed = false }: SidebarProps = {}) {
         <SidebarHeader collapsed={collapsed} />
 
         {/* Quick search (read-only — ⌘K handler is Phase 5). */}
-        <div className={collapsed ? "px-space-xs py-space-xs" : "px-space-md py-space-xs"}>
+        {/* <div
+          className={
+            collapsed ? "px-space-xs py-space-xs" : "px-space-md py-space-xs"
+          }
+        >
           <div className="relative flex items-center">
             <Icon
               name="search"
@@ -132,7 +134,7 @@ export function Sidebar({ collapsed = false }: SidebarProps = {}) {
               </kbd>
             ) : null}
           </div>
-        </div>
+        </div> */}
 
         <div className="flex-1 overflow-y-auto board-scroll px-space-md py-space-sm space-y-space-md">
           {/* Primary nav */}
@@ -179,14 +181,14 @@ export function Sidebar({ collapsed = false }: SidebarProps = {}) {
                   Active Boards
                 </span>
               )}
-              <button
+              {/* <button
                 type="button"
                 aria-label="Create board"
                 title="Create board (coming in Phase 5)"
                 className="size-5 flex items-center justify-center rounded text-outline hover:text-on-surface hover:bg-surface-container-high transition-colors"
               >
                 <Icon name="add" className="w-5 h-5" />
-              </button>
+              </button> */}
             </div>
 
             {boards.isPending ? (
@@ -261,7 +263,7 @@ export function Sidebar({ collapsed = false }: SidebarProps = {}) {
               </nav>
             )}
 
-            <div
+            {/* <div
               className={[
                 "mt-space-sm",
                 collapsed ? "flex justify-center" : "px-space-sm",
@@ -278,7 +280,7 @@ export function Sidebar({ collapsed = false }: SidebarProps = {}) {
                 <Icon name="add" className="w-5 h-5" />
                 {collapsed ? null : <span>Create Board</span>}
               </button>
-            </div>
+            </div> */}
           </div>
         </div>
       </div>
@@ -321,9 +323,9 @@ export function Sidebar({ collapsed = false }: SidebarProps = {}) {
               title="Sign out"
               data-testid="sidebar-signout"
               onClick={handleSignOut}
-              className="size-7 flex items-center justify-center rounded-lg text-outline hover:text-on-surface hover:bg-surface-container-high transition-colors"
+              className=" size-7 flex items-center justify-center rounded-lg text-outline hover:text-on-surface hover:bg-surface-container-high transition-colors"
             >
-              <Icon name="logout" className="w-5 h-5" />
+              <Icon name="logout" className=" w-5 h-5" />
             </button>
           )}
         </div>
