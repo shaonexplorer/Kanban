@@ -16,6 +16,10 @@ export interface BoardControlBarProps {
    * screen (the New Board control is a global affordance — it
    * always opens the create flow, even from a board view). */
   onOpenCreateBoard?: () => void;
+  /** Open the keyboard-shortcuts help modal. Wired by `BoardView`
+   * to the `<KeyboardShortcutsHelp />` component added in Phase 5
+   * Step 6. The same modal also opens on the `?` keypress. */
+  onOpenShortcutsHelp?: () => void;
 }
 
 /**
@@ -29,6 +33,9 @@ export interface BoardControlBarProps {
  *   - Manage Access — opens the `ShareBoardModal` (Phase 5).
  *   - New Task — opens the inline title input and calls
  *     `onCreateTask`.
+ *   - ? help — opens the `<KeyboardShortcutsHelp />` modal
+ *     (Phase 5 Step 6 / REQ-5.1.43). Sits to the left of the
+ *     other actions as a quiet `kbd`-styled button.
  *
  * The velocity sparkline, sprint name + dates, filter chips,
  * group-by selector, "X / Y issues" counter, and the Board / List /
@@ -40,6 +47,7 @@ export function BoardControlBar({
   canCreateTask = true,
   onOpenShareModal,
   onOpenCreateBoard,
+  onOpenShortcutsHelp,
 }: BoardControlBarProps) {
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
@@ -67,6 +75,23 @@ export function BoardControlBar({
           </div>
 
           <div className="flex items-center gap-space-md">
+            {/* Phase 5 Step 6 — Keyboard shortcuts help. The
+             * `?` button is intentionally quiet (no shadow,
+             * surface-container-lowest ground) so it doesn't
+             * compete with the primary actions, but a tooltip
+             * explains it on hover. Pressing `?` while the
+             * board has focus also opens the same modal — see
+             * `BoardView`'s keydown subscription. */}
+            <button
+              type="button"
+              title="Show keyboard shortcuts (?)"
+              aria-label="Show keyboard shortcuts"
+              onClick={onOpenShortcutsHelp}
+              className="flex items-center justify-center size-8 rounded-lg bg-surface-container-lowest hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface font-label-mono-md text-label-mono-md transition-colors"
+            >
+              <span aria-hidden>?</span>
+            </button>
+
             <button
               type="button"
               title="Create a new board"

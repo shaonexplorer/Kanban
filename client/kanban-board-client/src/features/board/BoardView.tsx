@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -49,6 +49,8 @@ import { ScrollToEndChevron } from "./components/ScrollToEndChevron";
 import { ShareBoardModal } from "./components/ShareBoardModal";
 import { CreateBoardDrawer } from "./components/CreateBoardDrawer";
 import { TaskModal } from "./components/TaskModal";
+import { QuickAddTaskModal } from "./components/QuickAddTaskModal";
+import { KeyboardShortcutsHelp } from "./components/KeyboardShortcutsHelp";
 import { useAuth } from "@/features/auth/useAuth";
 import { readErrorStatus } from "@/lib/api";
 import { useMediaQuery } from "@/lib/useMediaQuery";
@@ -176,6 +178,16 @@ export default function BoardView({ boardId }: BoardViewProps) {
   // the lifted `useOverlayState` context (Plan §5.4) so the home
   // page's empty state can open the same drawer.
   const [shareModalOpen, setShareModalOpen] = useState(false);
+
+  // Phase 5 Step 6: keyboard-shortcut open flags. The `c` /
+  // `b` / `m` / `?` shortcuts all open overlays; the underlying
+  // state stays local to the board view because none of these
+  // surfaces are opened from the home page (the `c` shortcut is
+  // a board-level affordance). Per Plan §6 the base shortcut
+  // (`c`) is the only required piece — `b` and `m` are
+  // explicitly stretch goals and ship together with the base.
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
 
   const { userId, userEmail, clearToken } = useAuth();
 
@@ -410,6 +422,100 @@ export default function BoardView({ boardId }: BoardViewProps) {
     if (snap) qc.setQueryData(boardQueryKey(boardId), snap);
   }
 
+  // ----- keyboard shortcuts (Phase 5 Step 6) -------------------------
+  //
+  // The board view subscribes to `keydown` while the board is
+  // mounted and reacts to:
+  //   - `c` → opens the centered `<QuickAddTaskModal />` (REQ-5.1.41).
+  //   - `b` → opens the `<CreateBoardDrawer />` (REQ-5.1.44 stretch).
+  //   - `m` → opens the `<ShareBoardModal />` (REQ-5.1.44 stretch).
+  //   - `?` → opens the `<KeyboardShortcutsHelp />` modal
+  //           (REQ-5.1.43).
+  //
+  // Per REQ-5.1.42, the handler short-circuits if the active
+  // element is an `<input>`, `<textarea>`, or
+  // `[contenteditable]` so the user can still type `c` in a
+  // task title. The handler also short-circuits if a modal is
+  // already open (only the help shortcut is allowed to layer on
+  // top of an existing overlay) and if the user is holding a
+  // modifier key (Cmd/Ctrl/Alt) so the shortcuts don't fight
+  // with browser-level hotkeys.
+  //
+  // The subscription is on the `document` so the user can
+  // press the keys from anywhere on the board, not just when
+  // the kanban canvas has focus. The handler is a no-op when
+  // the board is still loading or in an error state — there's
+  // nothing to add a task to without a cached `board` shape.
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      // Don't fire on Cmd/Ctrl/Alt — those belong to the browser
+      // and the OS. `?` requires Shift on most keyboards, so we
+      // allow Shift and check it per-shortcut below.
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // Don't fire while a text-entry field is focused.
+      const target = e.target;
+      if (target instanceof HTMLElement) {
+        const tag = target.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || target.isContentEditable) {
+          return;
+        }
+      }
+      // Only `?` (the help shortcut) is allowed to layer on top
+      // of an already-open overlay. All others short-circuit if
+      // any overlay is open so the user can't, e.g., open a
+      // second quick-add modal on top of an existing one.
+      const anyOverlayOpen =
+        quickAddOpen ||
+        shortcutsHelpOpen ||
+        shareModalOpen ||
+        createBoardOpen ||
+        selectedTaskId !== null;
+      const isHelp = e.key === "?";
+      if (anyOverlayOpen && !isHelp) return;
+      // The `?` shortcut also fires when the user presses
+      // Shift+`/` (most keyboards) — handle both forms.
+      if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
+        e.preventDefault();
+        setShortcutsHelpOpen(true);
+        return;
+      }
+      // The `c` / `b` / `m` shortcuts are bare letters. If the
+      // user is holding Shift, the keypress is something else
+      // (e.g. Shift+c = `C` in a search box) and we should not
+      // open an overlay.
+      if (e.shiftKey) return;
+      switch (e.key) {
+        case "c":
+          if (!board) return;
+          e.preventDefault();
+          setQuickAddOpen(true);
+          return;
+        case "b":
+          e.preventDefault();
+          overlay.openCreateBoard();
+          return;
+        case "m":
+          e.preventDefault();
+          setShareModalOpen(true);
+          return;
+        default:
+          return;
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [
+    board,
+    quickAddOpen,
+    shortcutsHelpOpen,
+    shareModalOpen,
+    createBoardOpen,
+    selectedTaskId,
+    overlay,
+  ]);
+
   // ----- render states -------------------------------------------------
 
   // Phase 5 Step 4: downcast the `useBoardQuery` error to a
@@ -627,6 +733,7 @@ export default function BoardView({ boardId }: BoardViewProps) {
             canCreateTask={canCreateTask}
             onOpenShareModal={() => setShareModalOpen(true)}
             onOpenCreateBoard={() => overlay.openCreateBoard()}
+            onOpenShortcutsHelp={() => setShortcutsHelpOpen(true)}
           />
 
           {/* Compact tier: single-column "lane focus" view, no
@@ -962,6 +1069,44 @@ export default function BoardView({ boardId }: BoardViewProps) {
             },
           })
         : null}
+
+      {/* Phase 5 Step 6 — Quick-add keyboard shortcut modal
+       * (REQ-5.1.41). Opens on the `c` keypress from
+       * `BoardView`'s keydown handler. Renders only when the
+       * board is loaded so the column list is non-empty. */}
+      {board ? (
+        <QuickAddTaskModal
+          open={quickAddOpen}
+          onClose={() => setQuickAddOpen(false)}
+          columns={board.columns.map((c) => ({
+            id: c.id,
+            title: c.title,
+          }))}
+          inFlight={createTask.isPending}
+          onCreate={({ columnId, title }) => {
+            createTask.mutate(
+              { columnId, title },
+              {
+                onError: () => {
+                  setToast({
+                    message: "Couldn't create task — please retry.",
+                    variant: "error",
+                  });
+                },
+              },
+            );
+          }}
+        />
+      ) : null}
+
+      {/* Phase 5 Step 6 — Keyboard shortcuts help modal
+       * (REQ-5.1.43). Opens on the `?` keypress or via the
+       * "?" button in the control bar. Static list; no
+       * additional state. */}
+      <KeyboardShortcutsHelp
+        open={shortcutsHelpOpen}
+        onClose={() => setShortcutsHelpOpen(false)}
+      />
     </div>
   );
 }
