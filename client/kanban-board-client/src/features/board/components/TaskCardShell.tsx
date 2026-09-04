@@ -10,6 +10,19 @@ export interface TaskCardShellProps {
   task: Task;
   /** When true, the card is dimmed to indicate a move is in flight. */
   inFlight: boolean;
+  /**
+   * Phase 5 Step 5 — called when the user clicks the card body (not
+   * the drag handle). The parent (`BoardView` / `LaneFocusView`)
+   * uses this to set the lifted `selectedTaskId` and open the
+   * `TaskModal`. On compact the card is tap-to-open (drag is
+   * disabled at the parent), so the dnd-kit `listeners` are not
+   * attached and a plain `onClick` does the work. On tablet /
+   * desktop the click also opens the modal — the dnd-kit
+   * `listeners` are attached to the same node, but a real mouse
+   * click (without a drag) ends in a `click` event that bubbles up
+   * and fires the modal.
+   */
+  onSelect?: (taskId: string) => void;
 }
 
 /**
@@ -34,8 +47,13 @@ function shortId(task: Task): string {
  * due date, assignee avatar). None of these have backing fields in
  * the `Task` model, so they are intentionally omitted — the card
  * only renders the title and optional description.
+ *
+ * Phase 5 Step 5: a click anywhere on the card body fires
+ * `onSelect(taskId)`. The dnd-kit `listeners` are still attached
+ * (so the card remains draggable on tablet / desktop), but a click
+ * without a drag triggers a `click` event that fires the modal.
  */
-export function TaskCardShell({ task, inFlight }: TaskCardShellProps) {
+export function TaskCardShell({ task, inFlight, onSelect }: TaskCardShellProps) {
   const {
     attributes,
     listeners,
@@ -56,12 +74,17 @@ export function TaskCardShell({ task, inFlight }: TaskCardShellProps) {
   const dimmed = inFlight || isDragging;
   const dragging = isDragging;
 
+  function handleClick() {
+    onSelect?.(task.id);
+  }
+
   return (
     <div
       ref={setNodeRef}
       style={style}
       {...attributes}
       {...listeners}
+      onClick={handleClick}
       className={[
         "group relative flex flex-col gap-space-sm",
         "p-space-md rounded-lg",

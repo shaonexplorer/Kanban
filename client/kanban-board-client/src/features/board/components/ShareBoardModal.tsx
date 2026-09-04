@@ -60,6 +60,14 @@ export interface ShareBoardModalProps {
    */
   onSave?: () => void;
   /**
+   * Phase 5 Step 5 — fired when the user toggles the
+   * "Anyone with the link can view" switch. The parent (BoardView)
+   * wires this to `PATCH /api/boards/:id` with `{ linkSharing }`.
+   * The body is server-side widened to accept the new field; the
+   * `linkSharing` column itself ships in Step 10's migration.
+   */
+  onLinkSharingChange?: (enabled: boolean) => void;
+  /**
    * Initial state of the link-sharing toggle. The toggle is purely
    * UI state until the server exposes a `publicAccess` flag.
    */
@@ -110,6 +118,7 @@ export function ShareBoardModal({
   onRemoveMember,
   onChangeMemberRole,
   onSave,
+  onLinkSharingChange,
   initialLinkSharing = true,
   shareUrl = "https://kandor.app/boards/b_9f82a17c?token=sh_29a",
 }: ShareBoardModalProps) {
@@ -292,7 +301,11 @@ export function ShareBoardModal({
                 role="switch"
                 aria-checked={linkSharing}
                 aria-label="Toggle public link sharing"
-                onClick={() => setLinkSharing((v) => !v)}
+                onClick={() => {
+                  const next = !linkSharing;
+                  setLinkSharing(next);
+                  onLinkSharingChange?.(next);
+                }}
                 className={[
                   "w-11 h-6 rounded-full relative p-0.5 transition-colors cursor-pointer shrink-0",
                   linkSharing

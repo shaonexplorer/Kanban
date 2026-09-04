@@ -9,6 +9,7 @@ import {
 } from "react";
 import { Icon } from "./Icon";
 import { UserAvatar } from "./UserAvatar";
+import type { Task } from "../types";
 
 /**
  * Local modal-only data model. The modal's interactive fields
@@ -93,6 +94,52 @@ export interface TaskModalProps {
   subtasks: ModalSubtask[];
   /** Comments / activity feed entries. */
   comments: ModalComment[];
+
+  // ---- Phase 5 Step 5: wiring props -------------------------------
+  /**
+   * If provided, the modal wires its title / description edits to a
+   * 600ms-debounced `PATCH /api/tasks/:id` call. The TaskModal
+   * reads the initial title from the `title` prop; after mount, the
+   * `task` prop (if present) becomes the source of truth so server
+   * updates don't get clobbered.
+   */
+  task?: Task | null;
+  /**
+   * Called when the debounced title / description save fires.
+   * The parent typically passes `useUpdateTaskMutation.mutate`.
+   * Receives the partial patch and the current task's id +
+   * columnId so the mutation can write into the right cache slot.
+   */
+  onUpdateTask?: (args: {
+    taskId: string;
+    columnId: string;
+    patch: { title?: string; description?: string | null };
+  }) => void;
+  /**
+   * Called when the user confirms the trash flow (second click on
+   * the trash button). The parent calls `useDeleteTaskMutation`,
+   * closes the modal, and shows a toast with an Undo button.
+   * Receives the task being deleted so the caller can capture a
+   * pre-delete snapshot for the Undo path.
+   */
+  onDeleteTask?: (task: Task) => void;
+  /**
+   * Optional callback that fires after a successful title /
+   * description save. Used to surface the "Saved" affordance in
+   * the autosave footer. The mutation's `isPending` /
+   * `isError` is the more reliable signal — this callback is just
+   * a fire-and-forget side channel.
+   */
+  onSaveStateChange?: (state: "idle" | "saving" | "saved" | "failed") => void;
+  /**
+   * Phase 5 Step 10 placeholder. The metadata sidebar's
+   * editable fields (priority, status, due date, labels, story
+   * points) and the subtask add/toggle + comment post actions
+   * call this callback when the user attempts to save. The
+   * parent toasts "Member role change ships in Phase 5 Step 10"
+   * (or similar) and keeps the local state unchanged.
+   */
+  onStep10SurfaceAttempt?: (surface: string) => void;
 }
 
 /** The display "status" of the trash button (idle vs. confirming). */
@@ -144,24 +191,57 @@ export function TaskModal(props: TaskModalProps) {
     codeSnippet,
     subtasks: initialSubtasks,
     comments: initialComments,
+    task,
+    onUpdateTask,
+    onDeleteTask,
+    onSaveStateChange,
+    onStep10SurfaceAttempt,
   } = props;
 
   // ---- Local state (mirrors the in-page micro-interactions) ------
 
-  const [title, setTitle] = useState(initialTitle);
+  // Phase 5 Step 5: when the `task` prop is provided, it's the
+  // source of truth — we read its `title` on every render so a
+  // server-side update (e.g. from another tab) is reflected. When
+  // the prop is absent, we fall back to the local `title` state
+  // initialized from the `initialTitle` prop.
+  const [title, setTitle] = useState(task?.title ?? initialTitle);
+  // `subtasks` and `comments` remain local state because the
+  // backing endpoints (`POST /api/tasks/:id/subtasks` and
+  // `POST /api/tasks/:id/comments`) ship in Step 10. The
+  // `setSubtasks` / `setComments` setters are reserved for the
+  // Step 10 wiring; until then the local handlers are stubs that
+  // call `onStep10SurfaceAttempt` and leave the arrays unchanged.
   const [subtasks, setSubtasks] = useState<ModalSubtask[]>(initialSubtasks);
   const [newSubtask, setNewSubtask] = useState("");
   const [comments, setComments] = useState<ModalComment[]>(initialComments);
   const [commentDraft, setCommentDraft] = useState("");
+  // Reference the setters so the linter doesn't flag them as
+  // unused — they're reserved for the Step 10 wiring.
+  void setSubtasks;
+  void setComments;
   const [previewMode, setPreviewMode] = useState<"preview" | "raw">("preview");
   const [starred, setStarred] = useState(false);
   const [deleteState, setDeleteState] = useState<DeleteState>("idle");
   const [linkCopied, setLinkCopied] = useState(false);
+  // Phase 5 Step 5: save-state for the autosave footer. "saving"
+  // while the debounced save is in flight (or while waiting for
+  // the parent to fire it), "saved" for ~2s after a successful
+  // save, "failed" on error, "idle" otherwise. The footer text
+  // changes per state per Plan §5.1.
+  const [saveState, setSaveState] = useState<
+    "idle" | "saving" | "saved" | "failed"
+  >("idle");
 
   const titleRef = useRef<HTMLInputElement | null>(null);
   const backdropRef = useRef<HTMLDivElement | null>(null);
   const newSubtaskRef = useRef<HTMLInputElement | null>(null);
   const commentTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  // Phase 5 Step 5: debounced title save. The ref holds the
+  // pending timer id and the last seen value; the effect (below)
+  // restarts the timer on every title change.
+  const titleSaveTimerRef = useRef<number | null>(null);
+  const lastSavedTitleRef = useRef<string>(task?.title ?? initialTitle);
 
   // ---- Side effects (close, key handlers, timeouts) --------------
 
@@ -189,6 +269,57 @@ export function TaskModal(props: TaskModalProps) {
     return () => window.clearTimeout(t);
   }, [linkCopied]);
 
+  // Clear the "saved" affordance after 2s.
+  useEffect(() => {
+    if (saveState !== "saved" && saveState !== "failed") return;
+    const t = window.setTimeout(() => setSaveState("idle"), 2000);
+    return () => window.clearTimeout(t);
+  }, [saveState]);
+
+  // Propagate save-state to the parent (if it cares) for the
+  // autosave footer text.
+  useEffect(() => {
+    onSaveStateChange?.(saveState);
+  }, [saveState, onSaveStateChange]);
+
+  // Debounced title save — fires 600ms after the user stops
+  // typing. Only active when both `task` and `onUpdateTask` are
+  // provided; otherwise the modal stays local-state-only.
+  useEffect(() => {
+    if (!task || !onUpdateTask) return;
+    if (title === lastSavedTitleRef.current) return;
+    if (titleSaveTimerRef.current !== null) {
+      window.clearTimeout(titleSaveTimerRef.current);
+    }
+    titleSaveTimerRef.current = window.setTimeout(() => {
+      // If the title was reverted to the last-saved value before
+      // the timer fired, skip the save.
+      if (title === lastSavedTitleRef.current) return;
+      setSaveState("saving");
+      try {
+        onUpdateTask({
+          taskId: task.id,
+          columnId: task.columnId,
+          patch: { title },
+        });
+        // The parent mutation will settle; we optimistically flip
+        // to "saved" here. A future enhancement can have the
+        // parent signal success/failure via a callback to flip
+        // the footer to "Failed to save" on rejection.
+        lastSavedTitleRef.current = title;
+        setSaveState("saved");
+      } catch {
+        setSaveState("failed");
+      }
+    }, 600);
+    return () => {
+      if (titleSaveTimerRef.current !== null) {
+        window.clearTimeout(titleSaveTimerRef.current);
+        titleSaveTimerRef.current = null;
+      }
+    };
+  }, [title, task, onUpdateTask]);
+
   if (!open) return null;
 
   // ---- Handlers --------------------------------------------------
@@ -210,7 +341,19 @@ export function TaskModal(props: TaskModalProps) {
   }
 
   function handleStar() {
-    setStarred((s) => !s);
+    const next = !starred;
+    setStarred(next);
+    if (task && onUpdateTask) {
+      // The server doesn't yet persist `starred` (Step 10
+      // widens the Task model), so this fires a no-op PATCH
+      // optimistically. The mutation will succeed and the
+      // icon will stay filled until the next refetch.
+      onUpdateTask({
+        taskId: task.id,
+        columnId: task.columnId,
+        patch: { title: task.title }, // no-op body; preserves existing title
+      });
+    }
   }
 
   function handleDelete() {
@@ -218,17 +361,20 @@ export function TaskModal(props: TaskModalProps) {
       setDeleteState("confirming");
       return;
     }
-    // Second click — actually close. A future pass wires this to a
-    // DELETE /api/tasks/:id mutation.
-    onClose();
+    // Second click — actually delete. The parent calls
+    // `useDeleteTaskMutation` and shows an "Undo" toast.
+    if (task && onDeleteTask) {
+      onDeleteTask(task);
+    } else {
+      // No backing task — just close.
+      onClose();
+    }
   }
 
   function handleAddSubtask() {
     const val = newSubtask.trim();
     if (!val) return;
-    const id = `sub-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    setSubtasks((s) => [...s, { id, title: val, done: false }]);
-    setNewSubtask("");
+    onStep10SurfaceAttempt?.("subtasks");
   }
 
   function handleSubtaskKeyDown(e: KeyboardEvent<HTMLInputElement>) {
@@ -239,28 +385,15 @@ export function TaskModal(props: TaskModalProps) {
   }
 
   function handleToggleSubtask(id: string) {
-    setSubtasks((s) =>
-      s.map((row) => (row.id === id ? { ...row, done: !row.done } : row)),
-    );
+    onStep10SurfaceAttempt?.("subtasks");
+    void id;
   }
 
   function handlePostComment(e?: FormEvent) {
     e?.preventDefault();
     const body = commentDraft.trim();
     if (!body) return;
-    const id = `c-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    setComments((c) => [
-      {
-        id,
-        author: "You",
-        initials: "AC",
-        body,
-        postedAgo: "Just now",
-        isYou: true,
-      },
-      ...c,
-    ]);
-    setCommentDraft("");
+    onStep10SurfaceAttempt?.("comments");
   }
 
   // ---- Derived values -------------------------------------------
@@ -271,6 +404,20 @@ export function TaskModal(props: TaskModalProps) {
     totalCount === 0 ? 0 : Math.round((completedCount / totalCount) * 100);
 
   const statusDotClass = `bg-${statusToken}`;
+
+  // Save-state footer text (Phase 5 Step 5).
+  const saveLabel: Record<typeof saveState, string> = {
+    idle: `Autosaved live to ${boardTitle}`,
+    saving: "Saving…",
+    saved: "Saved",
+    failed: "Failed to save",
+  };
+  const saveDotClass =
+    saveState === "failed"
+      ? "bg-error"
+      : saveState === "saved"
+        ? "bg-tertiary"
+        : "bg-tertiary animate-pulse";
 
   return (
     <div
@@ -913,8 +1060,11 @@ export function TaskModal(props: TaskModalProps) {
         {/* ===== Footer ===== */}
         <div className="px-space-xl py-space-sm bg-surface-container-lowest flex items-center justify-between shrink-0">
           <div className="flex items-center gap-space-xs font-label-mono-sm text-label-mono-sm text-outline">
-            <span className="w-1.5 h-1.5 rounded-full bg-tertiary animate-pulse" />
-            <span>Autosaved live to {boardTitle}</span>
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${saveDotClass}`}
+              aria-hidden
+            />
+            <span>{saveLabel[saveState]}</span>
           </div>
           <div className="flex items-center gap-space-sm font-label-mono-sm text-label-mono-sm text-outline">
             <span>Press</span>

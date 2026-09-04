@@ -25,6 +25,12 @@ import { useBoardQuery, boardQueryKey } from "./useBoardQuery";
 import { useMoveTaskMutation } from "./useMoveTaskMutation";
 import { useMoveColumnMutation } from "./useMoveColumnMutation";
 import { useCreateTaskMutation } from "./useCreateTaskMutation";
+import { useUpdateTaskMutation } from "./useUpdateTaskMutation";
+import { useDeleteTaskMutation } from "./useDeleteTaskMutation";
+import { useCreateBoardMutation } from "./useCreateBoardMutation";
+import { useInviteMemberMutation } from "./useInviteMemberMutation";
+import { useRemoveMemberMutation } from "./useRemoveMemberMutation";
+import { useUpdateBoardMutation } from "./useUpdateBoardMutation";
 import {
   findColumnOfTask,
   moveTaskWithinBoard,
@@ -42,12 +48,14 @@ import { LaneFocusView } from "./components/LaneFocusView";
 import { ScrollToEndChevron } from "./components/ScrollToEndChevron";
 import { ShareBoardModal } from "./components/ShareBoardModal";
 import { CreateBoardDrawer } from "./components/CreateBoardDrawer";
+import { TaskModal } from "./components/TaskModal";
 import { useAuth } from "@/features/auth/useAuth";
 import { readErrorStatus } from "@/lib/api";
 import { useMediaQuery } from "@/lib/useMediaQuery";
 import { Toast } from "./components/Toast";
 import { BoardSkeleton } from "./components/BoardSkeleton";
 import { BoardErrorState, type BoardErrorReason } from "./components/BoardErrorState";
+import { useOverlayState } from "./overlays/useOverlayState";
 
 export interface BoardViewProps {
   boardId: string;
@@ -90,6 +98,16 @@ export default function BoardView({ boardId }: BoardViewProps) {
   const moveTask = useMoveTaskMutation(boardId, snapshotRef);
   const moveColumn = useMoveColumnMutation(boardId, snapshotRef);
   const createTask = useCreateTaskMutation(boardId);
+  // Phase 5 Step 5: the new mutations backing the TaskModal
+  // (title autosave, star, trash) and the ShareBoardModal
+  // (invite, remove, link-sharing toggle) and the
+  // CreateBoardDrawer (new board with widened body).
+  const updateTask = useUpdateTaskMutation(boardId);
+  const deleteTaskMutation = useDeleteTaskMutation(boardId);
+  const createBoard = useCreateBoardMutation();
+  const inviteMember = useInviteMemberMutation(boardId);
+  const removeMember = useRemoveMemberMutation(boardId);
+  const updateBoardMutation = useUpdateBoardMutation(boardId);
 
   // Phase 5 Step 1: tier detection via two media queries. The
   // canonical breakpoints match Tailwind v4 defaults (sm = 640px,
@@ -116,19 +134,33 @@ export default function BoardView({ boardId }: BoardViewProps) {
   // `{ message, variant } | null` so the new `<Toast />` component
   // can render the right accent + icon. All current call sites
   // surface failure messages, so they pass `variant: "error"`.
+  // Phase 5 Step 5: optional `action` button (used by the trash
+  // "Undo" toast).
   const [toast, setToast] = useState<
-    { message: string; variant: "info" | "error" | "success" } | null
+    | {
+        message: string;
+        variant: "info" | "error" | "success";
+        action?: { label: string; onClick: () => void };
+      }
+    | null
   >(null);
 
-  // Phase 5: Stitch-faithful share modal + create-board drawer are
-  // owned by the board view so the control bar's "New Board" and
-  // "Manage Access" buttons can toggle them. They are local state
-  // only — the underlying `POST /api/boards/:id/members`,
-  // `DELETE /api/boards/:id/members/:userId`, and `POST /api/boards`
-  // endpoints are not yet wired; the modal renders the data it has
-  // and the drawer is a no-op until those land.
-  const [shareModalOpen, setShareModalOpen] = useState(false);
-  const [createBoardOpen, setCreateBoardOpen] = useState(false);
+  // Phase 5 Step 5: lifted overlay state (Plan §5.4) owns the
+  // share modal's open flag, the create-board drawer's open flag,
+  // and the `TaskModal`'s selected task id. The home page's
+  // `<EmptyBoardsState />` writes to the same `createBoardOpen`
+  // flag through the same context, so a logged-in user without
+  // boards and a logged-in user on a board can both open the
+  // drawer without prop-drilling.
+  const overlay = useOverlayState();
+  const {
+    createBoardOpen,
+    selectedTaskId,
+    selectedTaskBoardId,
+    closeCreateBoard,
+    openTask,
+    closeTask,
+  } = overlay;
 
   // Phase 5 Step 1: sidebar visibility. On compact/tablet the
   // drawer is closed by default; on desktop the visible sidebar
@@ -136,6 +168,14 @@ export default function BoardView({ boardId }: BoardViewProps) {
   // the visible sidebar to icons-only via the header chevron.
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Phase 5 Step 5: the share modal's open flag stays local to
+  // the board view (it's only ever opened from the control bar on
+  // a board — never from the home page), but the create-board
+  // drawer's open flag + the task modal's selected task live in
+  // the lifted `useOverlayState` context (Plan §5.4) so the home
+  // page's empty state can open the same drawer.
+  const [shareModalOpen, setShareModalOpen] = useState(false);
 
   const { userId, userEmail, clearToken } = useAuth();
 
@@ -586,7 +626,7 @@ export default function BoardView({ boardId }: BoardViewProps) {
             onCreateTask={handleNewTask}
             canCreateTask={canCreateTask}
             onOpenShareModal={() => setShareModalOpen(true)}
-            onOpenCreateBoard={() => setCreateBoardOpen(true)}
+            onOpenCreateBoard={() => overlay.openCreateBoard()}
           />
 
           {/* Compact tier: single-column "lane focus" view, no
@@ -601,6 +641,7 @@ export default function BoardView({ boardId }: BoardViewProps) {
               onQuickAddError={(msg) =>
                 setToast({ message: msg, variant: "error" })
               }
+              onSelectTask={(taskId) => openTask(boardId, taskId)}
             />
           ) : (
             <DndContext
@@ -654,6 +695,7 @@ export default function BoardView({ boardId }: BoardViewProps) {
                             onQuickAddError={(msg) =>
                               setToast({ message: msg, variant: "error" })
                             }
+                            onSelectTask={(taskId) => openTask(boardId, taskId)}
                           />
                         );
                       })}
@@ -701,16 +743,24 @@ export default function BoardView({ boardId }: BoardViewProps) {
           message={toast.message}
           variant={toast.variant}
           onDismiss={() => setToast(null)}
+          {...(toast.action ? { action: toast.action } : {})}
+          // The trash "Undo" toast needs a 5-second window to
+          // match Plan §5.1; every other toast keeps the default
+          // 4-second auto-dismiss.
+          autoDismissMs={toast.action ? 5000 : 4000}
         />
       ) : null}
 
-      {/* ---- Share modal + create-board drawer (Phase 5) ----
+      {/* ---- Share modal + create-board drawer + TaskModal
+       *      (Phase 5 Step 5) ----
        *
-       * Both overlays are rendered at the board root so the body
-       * scroll-lock and Esc-to-close handlers they own never need
-       * to be re-implemented. The drawer's slide-in motion and
-       * the modal's fade+zoom-in motion are both Tailwind
-       * animate-in utilities from the kinetic-grid token set. */}
+       * All three overlays are rendered at the board root so the
+       * body scroll-lock and Esc-to-close handlers they own never
+       * need to be re-implemented. The share modal's open flag
+       * stays local; the create-board drawer's open flag and the
+       * `TaskModal`'s selected task live in the lifted
+       * `useOverlayState` context (Plan §5.4) so the home page's
+       * `<EmptyBoardsState />` can open the same drawer. */}
       {board ? (
         <ShareBoardModal
           open={shareModalOpen}
@@ -718,29 +768,273 @@ export default function BoardView({ boardId }: BoardViewProps) {
           boardTitle={board.title}
           members={board.members}
           currentUserId={userId}
-          onSendInvite={() =>
-            setToast({
-              message:
-                "Invite endpoint lands in Phase 5 — collaboration is read-only this pass.",
-              variant: "info",
-            })
-          }
+          onSendInvite={({ email, role }) => {
+            inviteMember.mutate(
+              { email, role: role === "Admin" ? "ADMIN" : "MEMBER" },
+              {
+                onError: () => {
+                  setToast({
+                    message: "Couldn't send invite — please retry.",
+                    variant: "error",
+                  });
+                },
+                onSuccess: () => {
+                  setToast({
+                    message: `Invite sent to ${email}.`,
+                    variant: "success",
+                  });
+                },
+              },
+            );
+          }}
+          onRemoveMember={({ userId: targetUserId }) => {
+            // Pending-invitation rows have a `userId` like
+            // `pending-<email>`. The server endpoint expects a
+            // real UUID; for now we surface a "Step 10" toast
+            // for those and only call the real endpoint for
+            // real member rows.
+            if (targetUserId.startsWith("pending-")) {
+              setToast({
+                message:
+                  "Revoking a pending invite ships in Phase 5 Step 10.",
+                variant: "info",
+              });
+              return;
+            }
+            removeMember.mutate(
+              { userId: targetUserId },
+              {
+                onError: () => {
+                  setToast({
+                    message: "Couldn't remove member — please retry.",
+                    variant: "error",
+                  });
+                },
+              },
+            );
+          }}
+          onLinkSharingChange={(enabled) => {
+            updateBoardMutation.mutate(
+              { patch: { linkSharing: enabled ? "VIEW" : "DISABLED" } },
+              {
+                onError: () => {
+                  setToast({
+                    message: "Couldn't update share settings — please retry.",
+                    variant: "error",
+                  });
+                },
+                onSuccess: () => {
+                  setToast({
+                    message: enabled
+                      ? "Public link sharing is on."
+                      : "Public link sharing is off.",
+                    variant: "success",
+                  });
+                },
+              },
+            );
+          }}
         />
       ) : null}
 
       <CreateBoardDrawer
         open={createBoardOpen}
-        onClose={() => setCreateBoardOpen(false)}
+        onClose={closeCreateBoard}
         leadEmail={userEmail}
-        onCreate={() =>
-          setToast({
-            message:
-              "Create-board endpoint lands in Phase 5 — new boards are not yet persisted.",
-            variant: "info",
-          })
-        }
+        onCreate={(args) => {
+          createBoard.mutate(
+            {
+              title: args.title,
+              projectKey: args.projectKey,
+              colorIdentity:
+                args.colorToken === "primary"
+                  ? "PRIMARY"
+                  : args.colorToken === "tertiary"
+                    ? "TERTIARY"
+                    : args.colorToken === "secondary"
+                      ? "SECONDARY"
+                      : args.colorToken === "error"
+                        ? "ERROR"
+                        : "OUTLINE",
+              template:
+                args.workflowTemplate === "software-engineering"
+                  ? "SOFTWARE_ENG"
+                  : "INCIDENT_MGMT",
+            },
+            {
+              onSuccess: (created) => {
+                closeCreateBoard();
+                router.push(`/boards/${created.id}`);
+              },
+              onError: () => {
+                setToast({
+                  message: "Couldn't create board — please retry.",
+                  variant: "error",
+                });
+              },
+            },
+          );
+        }}
       />
+
+      {/* Phase 5 Step 5 — TaskModal. Looked up from the cache (no
+       * separate fetch). The modal is fed a `Task` from the
+       * current `board` shape; when a `board` is in the cache
+       * AND a task id is selected, the modal renders. The
+       * modal's own `useEffect` keys handle the close + body
+       * scroll-lock. */}
+      {board && selectedTaskId
+        ? renderTaskModal({
+            board,
+            taskId: selectedTaskId,
+            expectedBoardId: selectedTaskBoardId ?? boardId,
+            onClose: closeTask,
+            onUpdateTask: ({ taskId, columnId, patch }) =>
+              updateTask.mutate({ taskId, columnId, patch }),
+            onDeleteTask: (task) => {
+              // Capture the pre-delete task so the toast can
+              // re-create it via `useCreateTaskMutation` within
+              // the 5-second undo window.
+              const snapshot = task;
+              deleteTaskMutation.mutate(
+                { taskId: task.id, columnId: task.columnId },
+                {
+                  onSuccess: () => {
+                    closeTask();
+                    setToast({
+                      message: `Task "${snapshot.title}" deleted.`,
+                      variant: "info",
+                      action: {
+                        label: "Undo",
+                        // Phase 5 Plan §5.1 — the Undo re-creates
+                        // the task via the existing
+                        // `useCreateTaskMutation` (Phase 5 Step 2).
+                        // We extend the toast's auto-dismiss to 5s
+                        // so the Undo button stays active for the
+                        // full window. After the toast dismisses
+                        // the button is gone (the simple Undo
+                        // pattern from the plan, not a true
+                        // soft-delete with history).
+                        onClick: () => {
+                          createTask.mutate(
+                            {
+                              columnId: snapshot.columnId,
+                              title: snapshot.title,
+                            },
+                            {
+                              onSuccess: () => {
+                                setToast({
+                                  message: `Task "${snapshot.title}" restored.`,
+                                  variant: "success",
+                                });
+                              },
+                              onError: () => {
+                                setToast({
+                                  message: "Couldn't restore task.",
+                                  variant: "error",
+                                });
+                              },
+                            },
+                          );
+                        },
+                      },
+                    });
+                    // 5-second Undo window — see the comment in
+                    // `action.onClick`. The 4s default toast
+                    // dismiss would close the Undo too early.
+                    // The Toast's `autoDismissMs` is set to 5000
+                    // by the parent (see the JSX below).
+                  },
+                  onError: () => {
+                    setToast({
+                      message: "Couldn't delete task — please retry.",
+                      variant: "error",
+                    });
+                  },
+                },
+              );
+            },
+            onStep10SurfaceAttempt: (surface) => {
+              setToast({
+                message: `${surface} support ships in Phase 5 Step 10.`,
+                variant: "info",
+              });
+            },
+          })
+        : null}
     </div>
+  );
+}
+
+/**
+ * Tiny adapter that looks the selected task up in the cached
+ * `board` and renders the `TaskModal` with the right props. Lives
+ * as a `useMemo`-cached helper at the bottom of the file so
+ * `BoardView`'s render tree stays readable. The `expectedBoardId`
+ * check prevents a stale `selectedTaskId` from a different board
+ * (e.g. after a navigation) from rendering against the wrong
+ * `board`'s cache.
+ */
+function renderTaskModal(args: {
+  board: BoardDetail;
+  taskId: string;
+  expectedBoardId: string;
+  onClose: () => void;
+  onUpdateTask: (a: {
+    taskId: string;
+    columnId: string;
+    patch: { title?: string; description?: string | null };
+  }) => void;
+  onDeleteTask: (task: Task) => void;
+  onStep10SurfaceAttempt: (surface: string) => void;
+}): React.ReactNode {
+  const { board, taskId, expectedBoardId, onClose, onUpdateTask, onDeleteTask, onStep10SurfaceAttempt } = args;
+  if (board.id !== expectedBoardId) return null;
+  // Find the task + its column.
+  let foundTask: Task | null = null;
+  let foundColumn: ColumnT | null = null;
+  for (const col of board.columns) {
+    const t = col.tasks.find((x) => x.id === taskId);
+    if (t) {
+      foundTask = t;
+      foundColumn = col;
+      break;
+    }
+  }
+  if (!foundTask || !foundColumn) return null;
+
+  // The modal's `statusToken` / `statusLabel` are derived from the
+  // column (the wire Task shape doesn't carry a status field —
+  // the column title is the closest analogue). The other
+  // metadata fields (priority, story points, due date, labels,
+  // assignees) are sentinels until Step 10 widens the Task
+  // model.
+  return (
+    <TaskModal
+      open
+      onClose={onClose}
+      boardTitle={board.title}
+      columnTitle={foundColumn.title}
+      taskIdLabel={`${board.title.slice(0, 3).toUpperCase()}-${foundTask.id.slice(0, 3).toUpperCase()}`}
+      title={foundTask.title}
+      description={foundTask.description ?? ""}
+      statusToken="primary"
+      statusLabel={foundColumn.title}
+      priority="medium"
+      priorityLabel="Medium"
+      storyPoints={0}
+      dueDateLabel={null}
+      assignees={[]}
+      labels={[]}
+      createdAt={foundTask.createdAt}
+      updatedAt={foundTask.createdAt}
+      subtasks={[]}
+      comments={[]}
+      task={foundTask}
+      onUpdateTask={onUpdateTask}
+      onDeleteTask={onDeleteTask}
+      onStep10SurfaceAttempt={onStep10SurfaceAttempt}
+    />
   );
 }
 

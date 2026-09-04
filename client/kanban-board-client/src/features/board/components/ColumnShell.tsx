@@ -37,6 +37,11 @@ export interface ColumnShellProps {
    *  becomes a no-op. The column header still acts as a drag
    *  handle on tablet / desktop. */
   compactMode?: boolean;
+  /** Phase 5 Step 5 — called when a task card in this column is
+   *  clicked. The parent (BoardView / LaneFocusView) uses this to
+   *  set the lifted `selectedTaskId` and open the `TaskModal`.
+   *  Forwarded to every `TaskCardShell` rendered below. */
+  onSelectTask?: (taskId: string) => void;
 }
 
 const statusDotClass: Record<
@@ -79,6 +84,7 @@ export function ColumnShell({
   statusToken = "outline",
   onQuickAddError,
   compactMode = false,
+  onSelectTask,
 }: ColumnShellProps) {
   const {
     attributes,
@@ -182,6 +188,7 @@ export function ColumnShell({
               inFlight={
                 columnDimmed || inFlightIds.has(task.id) || isAnyDragging
               }
+              onSelect={onSelectTask}
             />
           ))}
         </SortableContext>

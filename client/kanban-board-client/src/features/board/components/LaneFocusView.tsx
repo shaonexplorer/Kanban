@@ -21,6 +21,10 @@ export interface LaneFocusViewProps {
    *  surfaces this as a toast so the user knows the input is still
    *  editable. */
   onQuickAddError?: (message: string) => void;
+  /** Phase 5 Step 5 — called when a task card is tapped. The parent
+   *  (BoardView) uses this to set the lifted `selectedTaskId` and
+   *  open the `TaskModal`. */
+  onSelectTask?: (taskId: string) => void;
 }
 
 /**
@@ -49,6 +53,7 @@ export function LaneFocusView({
   inFlightIds,
   isAnyDragging,
   onQuickAddError,
+  onSelectTask,
 }: LaneFocusViewProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const stripRef = useRef<HTMLDivElement | null>(null);
@@ -187,6 +192,7 @@ export function LaneFocusView({
           statusToken={statusToken}
           compactMode
           onQuickAddError={onQuickAddError}
+          onSelectTask={onSelectTask}
         />
       </div>
     </div>

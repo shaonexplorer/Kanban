@@ -22,6 +22,14 @@ export interface ToastProps {
   /** Called when the toast dismisses itself (timer) or the user
    *  dismisses it (close button / click). */
   onDismiss: () => void;
+  /** Phase 5 Step 5 — optional action button. Renders to the
+   *  right of the message (before the close button). The
+   *  TaskModal's trash "Undo" flow uses this to render an
+   *  "Undo" button that re-creates the deleted task. */
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
 }
 
 /**
@@ -59,6 +67,7 @@ export function Toast({
   variant = "info",
   autoDismissMs = 4000,
   onDismiss,
+  action,
 }: ToastProps) {
   // Hover-pause state for the dismiss timer (REQ-5.1.17).
   const [paused, setPaused] = useState(false);
@@ -170,6 +179,22 @@ export function Toast({
       <span className="flex-1 font-body-sm text-body-sm text-on-surface">
         {message}
       </span>
+      {action ? (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            action.onClick();
+            // Calling the action also dismisses the toast so the
+            // user sees the result of their click (the success
+            // toast that the action sets).
+            onDismiss();
+          }}
+          className="shrink-0 px-2 py-1 rounded bg-primary text-on-primary font-label-ui-sm text-label-ui-sm hover:bg-primary-fixed-dim transition-colors"
+        >
+          {action.label}
+        </button>
+      ) : null}
       <button
         type="button"
         onClick={(e) => {

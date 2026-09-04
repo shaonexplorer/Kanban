@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/features/auth/useAuth";
 import { AuthScreen } from "@/features/auth/AuthScreen";
 import { fetchMyBoards } from "@/features/board/api";
+import { useCreateBoardMutation } from "@/features/board/useCreateBoardMutation";
 import { EmptyBoardsState } from "@/features/board/components/EmptyBoardsState";
 import { CreateBoardDrawer } from "@/features/board/components/CreateBoardDrawer";
 import { Toast } from "@/features/board/components/Toast";
+import { useOverlayState } from "@/features/board/overlays/useOverlayState";
 
 /**
  * Landing page (Phase 5).
@@ -23,22 +25,24 @@ import { Toast } from "@/features/board/components/Toast";
  *   - Logged-in + boards present → auto-redirect to the user's
  *     first board (the existing Phase 4 / Phase 5 behavior).
  *
- * The "Create your first board" button opens a local-state drawer.
- * The drawer's `onCreate` callback toasts "Board creation lands in
- * Phase 5 Step 5." and closes; the real `POST /api/boards` wiring
- * is a Step 5 deliverable. The Plan §5.4 `useOverlayState` context
- * (so `BoardControlBar` and this empty state share the same flag)
- * is also Step 5.
+ * Phase 5 Step 5: the `createBoardOpen` flag is now lifted to the
+ * `useOverlayState` context (Plan §5.4) so the same drawer is
+ * opened by the board view's `<BoardControlBar />` "New Board"
+ * button. The drawer's `onCreate` is wired to
+ * `useCreateBoardMutation`; on success the new board id is used
+ * to navigate to `/boards/:newId`.
  */
 export default function Home() {
   const router = useRouter();
   const { token } = useAuth();
+  const { createBoardOpen, closeCreateBoard, openCreateBoard } =
+    useOverlayState();
+  const createBoard = useCreateBoardMutation();
   const [boardsState, setBoardsState] = useState<
     | { kind: "loading" }
     | { kind: "empty" }
     | { kind: "error"; message: string }
   >({ kind: "loading" });
-  const [createBoardOpen, setCreateBoardOpen] = useState(false);
   const [toast, setToast] = useState<
     { message: string; variant: "info" | "error" | "success" } | null
   >(null);
@@ -91,7 +95,7 @@ export default function Home() {
 
         {boardsState.kind === "empty" ? (
           <EmptyBoardsState
-            onCreateBoard={() => setCreateBoardOpen(true)}
+            onCreateBoard={() => openCreateBoard()}
           />
         ) : null}
 
@@ -125,14 +129,41 @@ export default function Home() {
 
       <CreateBoardDrawer
         open={createBoardOpen}
-        onClose={() => setCreateBoardOpen(false)}
-        onCreate={() => {
-          setCreateBoardOpen(false);
-          setToast({
-            message:
-              "Board creation lands in Phase 5 Step 5 — new boards are not yet persisted.",
-            variant: "info",
-          });
+        onClose={closeCreateBoard}
+        leadEmail={null}
+        onCreate={(args) => {
+          createBoard.mutate(
+            {
+              title: args.title,
+              projectKey: args.projectKey,
+              colorIdentity:
+                args.colorToken === "primary"
+                  ? "PRIMARY"
+                  : args.colorToken === "tertiary"
+                    ? "TERTIARY"
+                    : args.colorToken === "secondary"
+                      ? "SECONDARY"
+                      : args.colorToken === "error"
+                        ? "ERROR"
+                        : "OUTLINE",
+              template:
+                args.workflowTemplate === "software-engineering"
+                  ? "SOFTWARE_ENG"
+                  : "INCIDENT_MGMT",
+            },
+            {
+              onSuccess: (created) => {
+                closeCreateBoard();
+                router.push(`/boards/${created.id}`);
+              },
+              onError: () => {
+                setToast({
+                  message: "Couldn't create board — please retry.",
+                  variant: "error",
+                });
+              },
+            },
+          );
         }}
       />
 

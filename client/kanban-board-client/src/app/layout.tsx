@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Providers from "./providers";
+import { OverlayStateProvider } from "@/features/board/overlays/useOverlayState";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -33,7 +34,16 @@ export default function RootLayout({
       className={`dark ${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <Providers>{children}</Providers>
+        <Providers>
+          {/* Phase 5 Step 5 — Lifted overlay state (Plan §5.4).
+           * Owned at the app root so the home page's empty-state
+           * card and the board view's control bar can open the
+           * same `CreateBoardDrawer` without prop-drilling. The
+           * `selectedTaskId` field is also owned here so a card
+           * click anywhere on the board (or compact mode) opens
+           * the same `TaskModal`. */}
+          <OverlayStateProvider>{children}</OverlayStateProvider>
+        </Providers>
       </body>
     </html>
   );

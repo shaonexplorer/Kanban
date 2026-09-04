@@ -423,14 +423,23 @@ $keyboardOk = ($boardViewSrc -match "KeyboardSensor") -and ($boardViewSrc -match
 Record "VAL-4.5.15 BoardView.tsx imports KeyboardSensor + sortableKeyboardCoordinates" $keyboardOk ""
 
 # C.5 -- VAL-4.5.16: the columns wrap their tasks in a nested
-# SortableContext.
+# SortableContext. The `Column.tsx` shim re-exports `ColumnShell.tsx`
+# (Phase 5 Step 1's refactor), so the actual SortableContext lives
+# in `ColumnShell.tsx`. We check both to keep the test forward-
+# compatible with either layout.
 $columnSrc = Get-Content "$Script:ClientDir/src/features/board/Column.tsx" -Raw
-$columnSortable = ($columnSrc -match "SortableContext")
+$columnShellSrc = Get-Content "$Script:ClientDir/src/features/board/components/ColumnShell.tsx" -Raw
+$columnSortable = (($columnSrc -match "SortableContext") -or ($columnShellSrc -match "SortableContext"))
 Record "VAL-4.5.16 Column.tsx wraps its tasks in a nested SortableContext" $columnSortable ""
 
 # C.6 -- VAL-4.5.10: the rollback indicator exposes role=status.
-$toastOk = ($boardViewSrc -match 'role="status"')
-Record "VAL-4.5.10 BoardView.tsx toast container exposes role=status" $toastOk ""
+# Phase 5 Step 3 moved the placeholder `<div role="status">` into
+# the dedicated `<Toast />` component (`features/board/components/Toast.tsx`).
+# We check both the BoardView (Phase 4 placement) and the Toast
+# component (Phase 5 placement) so the assertion holds either way.
+$toastComponentSrc = Get-Content "$Script:ClientDir/src/features/board/components/Toast.tsx" -Raw
+$toastOk = ($boardViewSrc -match 'role="status"') -or ($toastComponentSrc -match 'role="status"')
+Record "VAL-4.5.10 toast container exposes role=status" $toastOk ""
 
 # C.7 -- VAL-4.5.4: useMoveTaskMutation snapshots the previous
 # board and restores it on error (client-side rollback contract).
