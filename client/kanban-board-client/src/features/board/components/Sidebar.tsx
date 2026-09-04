@@ -8,6 +8,15 @@ import { UserAvatar } from "./UserAvatar";
 import { useAuth } from "@/features/auth/useAuth";
 import { useMyBoardsQuery } from "../useMyBoardsQuery";
 
+export interface SidebarProps {
+  /** When true, the sidebar collapses to icons-only (desktop tier
+   *  only — `BoardView` keeps the full sidebar on compact/tablet
+   *  by mounting `<SidebarOverlay>` instead). The collapse uses
+   *  the `motion.css` `--duration-slow` + `--ease-standard`
+   *  tokens for a smooth width transition. */
+  collapsed?: boolean;
+}
+
 /**
  * Stable hash → token-color bucket for the colored dots in front
  * of each board entry. The Stitch mocks give every board a single
@@ -57,32 +66,58 @@ const primaryNav: PrimaryNavItem[] = [
  * localStorage), the email is `null` and the card shows a generic
  * "Workspace user" placeholder.
  */
-export function Sidebar() {
+export function Sidebar({ collapsed = false }: SidebarProps = {}) {
   const pathname = usePathname();
   const { userEmail } = useAuth();
   const boards = useMyBoardsQuery();
 
+  const widthClass = collapsed
+    ? "w-sidebar-collapsed"
+    : "w-sidebar-expanded";
+
   return (
-    <aside className="fixed left-0 top-0 h-full w-sidebar-expanded bg-surface-container-lowest z-50 flex flex-col justify-between shadow-[0_1px_8px_rgba(0,0,0,0.4)]">
+    <aside
+      data-collapsed={collapsed ? "true" : "false"}
+      className={[
+        "fixed left-0 top-0 h-full z-50",
+        "flex flex-col justify-between",
+        "bg-surface-container-lowest",
+        "shadow-[0_1px_8px_rgba(0,0,0,0.4)]",
+        "transition-[width] duration-(--duration-slow) ease-standard",
+        widthClass,
+      ].join(" ")}
+    >
       <div className="flex flex-col flex-1 min-h-0">
-        <SidebarHeader />
+        <SidebarHeader collapsed={collapsed} />
 
         {/* Quick search (read-only — ⌘K handler is Phase 5). */}
-        <div className="px-space-md py-space-xs">
+        <div className={collapsed ? "px-space-xs py-space-xs" : "px-space-md py-space-xs"}>
           <div className="relative flex items-center">
             <Icon
               name="search"
-              className="absolute left-space-sm text-outline w-5 h-5 pointer-events-none"
+              className={[
+                "absolute text-outline w-5 h-5 pointer-events-none",
+                collapsed ? "left-1/2 -translate-x-1/2" : "left-space-sm",
+              ].join(" ")}
             />
             <input
               type="text"
               readOnly
               placeholder="Quick search…"
-              className="w-full bg-surface-container-low text-on-surface placeholder:text-outline pl-8 pr-12 py-1.5 rounded-lg font-body-sm text-body-sm focus:outline-none focus:bg-surface-container-high transition-colors"
+              aria-label="Quick search"
+              className={[
+                "bg-surface-container-low text-on-surface placeholder:text-outline py-1.5 rounded-lg font-body-sm text-body-sm focus:outline-none focus:bg-surface-container-high transition-colors",
+                collapsed
+                  ? "w-9 h-9 opacity-0 pointer-events-none"
+                  : "w-full pl-8 pr-12",
+              ].join(" ")}
+              tabIndex={collapsed ? -1 : 0}
             />
-            <kbd className="absolute right-space-sm font-label-mono-sm text-label-mono-sm text-on-surface-variant bg-surface-container-high px-1 py-0.5 rounded">
-              ⌘K
-            </kbd>
+            {!collapsed ? (
+              <kbd className="absolute right-space-sm font-label-mono-sm text-label-mono-sm text-on-surface-variant bg-surface-container-high px-1 py-0.5 rounded">
+                ⌘K
+              </kbd>
+            ) : null}
           </div>
         </div>
 
@@ -103,11 +138,16 @@ export function Sidebar() {
                 <Link
                   key={item.label}
                   href={item.href}
-                  className={`${baseClass} ${stateClass}`}
+                  className={[
+                    baseClass,
+                    stateClass,
+                    collapsed ? "justify-center px-0" : "",
+                  ].join(" ")}
                   aria-current={isActive ? "page" : undefined}
+                  title={collapsed ? item.label : undefined}
                 >
-                  <Icon name={item.icon} className="w-5 h-5" />
-                  <span>{item.label}</span>
+                  <Icon name={item.icon} className="w-5 h-5 shrink-0" />
+                  {collapsed ? null : <span>{item.label}</span>}
                 </Link>
               );
             })}
@@ -115,10 +155,17 @@ export function Sidebar() {
 
           {/* Active boards list — real data from GET /api/boards */}
           <div className="pt-space-xs">
-            <div className="flex items-center justify-between px-space-sm mb-space-2xs">
-              <span className="font-label-mono-sm text-label-mono-sm uppercase text-outline tracking-wider">
-                Active Boards
-              </span>
+            <div
+              className={[
+                "flex items-center mb-space-2xs",
+                collapsed ? "justify-center" : "justify-between px-space-sm",
+              ].join(" ")}
+            >
+              {collapsed ? null : (
+                <span className="font-label-mono-sm text-label-mono-sm uppercase text-outline tracking-wider">
+                  Active Boards
+                </span>
+              )}
               <button
                 type="button"
                 aria-label="Create board"
@@ -131,24 +178,24 @@ export function Sidebar() {
 
             {boards.isPending ? (
               <div className="px-space-sm py-space-xs font-label-mono-sm text-label-mono-sm text-outline">
-                Loading…
+                {collapsed ? "…" : "Loading…"}
               </div>
             ) : boards.isError ? (
               <div className="px-space-sm py-space-xs space-y-space-xs">
                 <p className="font-label-mono-sm text-label-mono-sm text-error">
-                  Failed to load boards.
+                  {collapsed ? "⚠" : "Failed to load boards."}
                 </p>
                 <button
                   type="button"
                   onClick={() => boards.refetch()}
                   className="font-label-ui-sm text-label-ui-sm text-primary hover:text-primary-fixed transition-colors"
                 >
-                  Retry
+                  {collapsed ? null : "Retry"}
                 </button>
               </div>
             ) : (boards.data?.length ?? 0) === 0 ? (
               <div className="px-space-sm py-space-xs font-label-mono-sm text-label-mono-sm text-outline">
-                No boards yet.
+                {collapsed ? null : "No boards yet."}
               </div>
             ) : (
               <nav className="space-y-space-2xs">
@@ -165,39 +212,58 @@ export function Sidebar() {
                     <Link
                       key={b.id}
                       href={href}
-                      className={`${baseClass} ${stateClass}`}
+                      className={[
+                        baseClass,
+                        stateClass,
+                        collapsed ? "justify-center px-0" : "",
+                      ].join(" ")}
                       aria-current={isActive ? "page" : undefined}
+                      title={collapsed ? b.title : undefined}
                     >
                       <div className="flex items-center gap-space-sm min-w-0">
                         <span
                           className={`size-2 rounded-full shrink-0 ${dotClass[dotTokenForBoard(b.id)]}`}
                         />
-                        <span className="truncate text-[13px]">{b.title}</span>
+                        {collapsed ? null : (
+                          <span className="truncate text-[13px]">
+                            {b.title}
+                          </span>
+                        )}
                       </div>
-                      <span
-                        className={`font-label-mono-sm text-label-mono-sm ${
-                          isActive
-                            ? "text-on-surface-variant"
-                            : "text-outline group-hover:text-on-surface-variant"
-                        }`}
-                        title={b.role === "OWNER" ? "Owner" : "Member"}
-                      >
-                        {count}
-                      </span>
+                      {collapsed ? null : (
+                        <span
+                          className={`font-label-mono-sm text-label-mono-sm ${
+                            isActive
+                              ? "text-on-surface-variant"
+                              : "text-outline group-hover:text-on-surface-variant"
+                          }`}
+                          title={b.role === "OWNER" ? "Owner" : "Member"}
+                        >
+                          {count}
+                        </span>
+                      )}
                     </Link>
                   );
                 })}
               </nav>
             )}
 
-            <div className="mt-space-sm px-space-sm">
+            <div
+              className={[
+                "mt-space-sm",
+                collapsed ? "flex justify-center" : "px-space-sm",
+              ].join(" ")}
+            >
               <button
                 type="button"
                 title="Create board (coming in Phase 5)"
-                className="w-full flex items-center gap-space-sm py-space-xs text-outline hover:text-primary transition-colors font-label-ui-md text-label-ui-md"
+                className={[
+                  "flex items-center gap-space-sm py-space-xs text-outline hover:text-primary transition-colors font-label-ui-md text-label-ui-md",
+                  collapsed ? "justify-center size-8 px-0" : "w-full",
+                ].join(" ")}
               >
                 <Icon name="add" className="w-5 h-5" />
-                <span>Create Board</span>
+                {collapsed ? null : <span>Create Board</span>}
               </button>
             </div>
           </div>
@@ -205,27 +271,46 @@ export function Sidebar() {
       </div>
 
       {/* Bottom user card — real email from useAuth() when known. */}
-      <div className="p-space-md bg-surface-container-low">
-        <div className="flex items-center justify-between p-space-xs rounded-xl hover:bg-surface-container transition-colors">
-          <div className="flex items-center gap-space-sm min-w-0">
-            <UserAvatar size="md" presence="tertiary" />
-            <div className="flex flex-col min-w-0">
-              <span className="font-label-ui-md text-label-ui-md text-on-surface truncate">
-                {userEmail ?? "Workspace user"}
-              </span>
-              <span className="font-label-mono-sm text-label-mono-sm text-outline truncate">
-                {userEmail ? "Member" : "Signed in"}
-              </span>
-            </div>
-          </div>
-          <button
-            type="button"
-            aria-label="User preferences"
-            title="Preferences (coming in Phase 5)"
-            className="size-7 flex items-center justify-center rounded-lg text-outline hover:text-on-surface hover:bg-surface-container-high transition-colors"
+      <div
+        className={[
+          "bg-surface-container-low",
+          collapsed ? "p-space-xs" : "p-space-md",
+        ].join(" ")}
+      >
+        <div
+          className={[
+            "flex items-center rounded-xl hover:bg-surface-container transition-colors",
+            collapsed ? "justify-center p-0" : "justify-between p-space-xs",
+          ].join(" ")}
+        >
+          <div
+            className={[
+              "flex items-center min-w-0",
+              collapsed ? "" : "gap-space-sm",
+            ].join(" ")}
           >
-            <Icon name="more_horiz" className="w-5 h-5" />
-          </button>
+            <UserAvatar size="md" presence="tertiary" />
+            {collapsed ? null : (
+              <div className="flex flex-col min-w-0">
+                <span className="font-label-ui-md text-label-ui-md text-on-surface truncate">
+                  {userEmail ?? "Workspace user"}
+                </span>
+                <span className="font-label-mono-sm text-label-mono-sm text-outline truncate">
+                  {userEmail ? "Member" : "Signed in"}
+                </span>
+              </div>
+            )}
+          </div>
+          {collapsed ? null : (
+            <button
+              type="button"
+              aria-label="User preferences"
+              title="Preferences (coming in Phase 5)"
+              className="size-7 flex items-center justify-center rounded-lg text-outline hover:text-on-surface hover:bg-surface-container-high transition-colors"
+            >
+              <Icon name="more_horiz" className="w-5 h-5" />
+            </button>
+          )}
         </div>
       </div>
     </aside>

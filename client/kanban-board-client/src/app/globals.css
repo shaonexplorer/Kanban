@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "../design/tokens.css";
+@import "../design/motion.css";
 
 /* Map Tailwind's `font-sans` / `font-mono` utilities to the Geist
  * font vars declared in src/app/layout.tsx. The tokens.css @theme

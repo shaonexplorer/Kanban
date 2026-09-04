@@ -23,6 +23,13 @@ export interface ColumnShellProps {
   statusToken?: "tertiary" | "secondary" | "primary" | "outline";
   /** Called when the per-column "+" button is pressed (no-op default). */
   onAddTask?: (columnId: string) => void;
+  /** When true, render the column at full width inside the
+   *  compact "lane focus" view. The column's `useSortable` is
+   *  still wired (so the dnd-kit types stay consistent) but
+   *  the parent disables dnd-kit on compact, so the handle
+   *  becomes a no-op. The column header still acts as a drag
+   *  handle on tablet / desktop. */
+  compactMode?: boolean;
 }
 
 const statusDotClass: Record<
@@ -57,6 +64,7 @@ export function ColumnShell({
   isAnyDragging,
   statusToken = "outline",
   onAddTask,
+  compactMode = false,
 }: ColumnShellProps) {
   const {
     attributes,
@@ -84,8 +92,11 @@ export function ColumnShell({
       style={style}
       data-testid={`column-${column.id}`}
       className={[
-        "w-column-width-min md:w-column-width-max",
-        "flex flex-col shrink-0",
+        compactMode
+          ? "w-full max-w-none"
+          : "w-column-width-min md:w-column-width-max",
+        "flex flex-col",
+        compactMode ? "" : "shrink-0",
         "bg-surface-container-lowest/90 rounded-xl",
         "p-space-sm shadow-md",
         "transition-opacity",
