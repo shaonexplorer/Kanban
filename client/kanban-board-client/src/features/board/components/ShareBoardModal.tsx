@@ -181,14 +181,14 @@ export function ShareBoardModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="share-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-space-base bg-surface-container-lowest/60 backdrop-blur-md animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center p-space-base bg-surface-container-lowest/60 backdrop-blur-md animate-in fade-in duration-(--duration-medium) ease-(--ease-emphasized)"
       onClick={(e) => {
         // Backdrop click closes, but clicks inside the modal panel
         // must not bubble up to the backdrop.
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="relative w-full max-w-[620px] bg-surface-container rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
+      <div className="relative w-full max-w-[620px] bg-surface-container rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-(--duration-medium) ease-(--ease-emphasized)">
         {/* ---- MODAL HEADER ---------------------------------------- */}
         <div className="px-space-xl pt-space-xl pb-space-md bg-surface-container-high/40 flex items-start justify-between gap-space-md">
           <div className="flex flex-col gap-1 min-w-0">

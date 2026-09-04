@@ -291,8 +291,12 @@ export function TaskModal(props: TaskModalProps) {
         className="pointer-events-none absolute w-[450px] h-[450px] rounded-full bg-tertiary/10 blur-3xl bottom-10 right-20"
       />
 
-      {/* Centered modal window (~760px). */}
-      <div className="relative w-full max-w-[760px] max-h-[942px] flex flex-col bg-surface-container rounded-xl shadow-2xl overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-200">
+      {/* Centered modal window (~760px). Phase 5 Step 3: swap the
+       * hard-coded `duration-200` for the motion-token utility so
+       * the open animation matches the rest of the phase's
+       * overlay vocabulary (`--duration-medium` = 200ms,
+       * `--ease-emphasized`). See Plan §3.2 / REQ-5.1.19. */}
+      <div className="relative w-full max-w-[760px] max-h-[942px] flex flex-col bg-surface-container rounded-xl shadow-2xl overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-(--duration-medium) ease-(--ease-emphasized)">
         {/* ===== Top action & breadcrumb header ===== */}
         <div className="flex flex-col bg-surface-container-high px-space-xl pt-space-lg pb-space-md shrink-0">
           <div className="flex items-center justify-between mb-space-sm">

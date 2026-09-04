@@ -97,7 +97,11 @@ export function CreateBoardDrawer({
         "fixed top-0 right-0 bottom-0 w-full max-w-[480px]",
         "bg-surface-container-low shadow-2xl z-50",
         "flex flex-col",
-        "transform transition-transform duration-300 ease-in-out",
+        // Phase 5 Step 3: swap the hard-coded `duration-300 ease-in-out`
+        // for the motion-token utilities so the slide-in matches the
+        // rest of the phase's overlay vocabulary (`--duration-medium`
+        // = 200ms, `--ease-emphasized`).
+        "transform transition-transform duration-(--duration-medium) ease-(--ease-emphasized)",
         open ? "translate-x-0" : "translate-x-full",
       ].join(" ")}
     >

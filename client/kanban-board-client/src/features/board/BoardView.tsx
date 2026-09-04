@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -43,6 +43,7 @@ import { ShareBoardModal } from "./components/ShareBoardModal";
 import { CreateBoardDrawer } from "./components/CreateBoardDrawer";
 import { useAuth } from "@/features/auth/useAuth";
 import { useMediaQuery } from "@/lib/useMediaQuery";
+import { Toast } from "./components/Toast";
 
 export interface BoardViewProps {
   boardId: string;
@@ -107,7 +108,13 @@ export default function BoardView({ boardId }: BoardViewProps) {
 
   const [activeDrag, setActiveDrag] = useState<ActiveDrag>(null);
   const [inFlightIds, setInFlightIds] = useState<Set<string>>(() => new Set());
-  const [toast, setToast] = useState<string | null>(null);
+  // Phase 5 Step 3: toast shape upgraded from `string | null` to
+  // `{ message, variant } | null` so the new `<Toast />` component
+  // can render the right accent + icon. All current call sites
+  // surface failure messages, so they pass `variant: "error"`.
+  const [toast, setToast] = useState<
+    { message: string; variant: "info" | "error" | "success" } | null
+  >(null);
 
   // Phase 5: Stitch-faithful share modal + create-board drawer are
   // owned by the board view so the control bar's "New Board" and
@@ -127,13 +134,6 @@ export default function BoardView({ boardId }: BoardViewProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const { userId, userEmail } = useAuth();
-
-  // Auto-dismiss the toast after a few seconds.
-  useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(null), 4000);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
 
   // Sensors: keyboard only on desktop (compact disables the entire
   // dnd-kit context; tablet uses the pointer sensor only). The
@@ -271,7 +271,10 @@ export default function BoardView({ boardId }: BoardViewProps) {
         { columnId: activeId, toIndex },
         {
           onError: () => {
-            setToast("Couldn't reorder column — restored previous state.");
+            setToast({
+              message: "Couldn't reorder column — restored previous state.",
+              variant: "error",
+            });
           },
           onSettled: () => {
             setInFlightIds((s) => {
@@ -334,7 +337,10 @@ export default function BoardView({ boardId }: BoardViewProps) {
         },
         {
           onError: () => {
-            setToast("Couldn't move task — restored previous state.");
+            setToast({
+              message: "Couldn't move task — restored previous state.",
+              variant: "error",
+            });
           },
           onSettled: () => {
             setInFlightIds((s) => {
@@ -407,14 +413,20 @@ export default function BoardView({ boardId }: BoardViewProps) {
 
   function handleNewTask({ title }: { title: string }) {
     if (!firstColumnId) {
-      setToast("Create a column before adding tasks.");
+      setToast({
+        message: "Create a column before adding tasks.",
+        variant: "error",
+      });
       return;
     }
     createTask.mutate(
       { columnId: firstColumnId, title },
       {
         onError: () => {
-          setToast("Couldn't create task — please retry.");
+          setToast({
+            message: "Couldn't create task — please retry.",
+            variant: "error",
+          });
         },
       },
     );
@@ -484,7 +496,9 @@ export default function BoardView({ boardId }: BoardViewProps) {
               statusTokens={statusTokens}
               inFlightIds={inFlightIds}
               isAnyDragging={isAnyDragging}
-              onQuickAddError={(msg) => setToast(msg)}
+              onQuickAddError={(msg) =>
+                setToast({ message: msg, variant: "error" })
+              }
             />
           ) : (
             <DndContext
@@ -535,7 +549,9 @@ export default function BoardView({ boardId }: BoardViewProps) {
                             inFlightIds={inFlightIds}
                             isAnyDragging={isAnyDragging}
                             statusToken={statusToken}
-                            onQuickAddError={(msg) => setToast(msg)}
+                            onQuickAddError={(msg) =>
+                              setToast({ message: msg, variant: "error" })
+                            }
                           />
                         );
                       })}
@@ -545,7 +561,10 @@ export default function BoardView({ boardId }: BoardViewProps) {
                   {board.columns.length > 0 ? (
                     <AddColumnGhost
                       onClick={() =>
-                        setToast("Add column flow lands in Phase 5.")
+                        setToast({
+                          message: "Add column flow lands in Phase 5.",
+                          variant: "info",
+                        })
                       }
                     />
                   ) : null}
@@ -576,21 +595,11 @@ export default function BoardView({ boardId }: BoardViewProps) {
       ) : null}
 
       {toast ? (
-        <div
-          role="status"
-          aria-live="polite"
-          className="fixed top-4 right-4 z-50 max-w-sm rounded-lg border border-error bg-surface-container px-space-md py-space-sm font-body-sm text-body-sm text-error shadow-md flex items-start gap-space-sm"
-        >
-          <span className="flex-1">{toast}</span>
-          <button
-            type="button"
-            onClick={() => setToast(null)}
-            aria-label="Dismiss"
-            className="text-error hover:text-on-error-container"
-          >
-            ×
-          </button>
-        </div>
+        <Toast
+          message={toast.message}
+          variant={toast.variant}
+          onDismiss={() => setToast(null)}
+        />
       ) : null}
 
       {/* ---- Share modal + create-board drawer (Phase 5) ----
@@ -608,9 +617,11 @@ export default function BoardView({ boardId }: BoardViewProps) {
           members={board.members}
           currentUserId={userId}
           onSendInvite={() =>
-            setToast(
-              "Invite endpoint lands in Phase 5 — collaboration is read-only this pass.",
-            )
+            setToast({
+              message:
+                "Invite endpoint lands in Phase 5 — collaboration is read-only this pass.",
+              variant: "info",
+            })
           }
         />
       ) : null}
@@ -620,9 +631,11 @@ export default function BoardView({ boardId }: BoardViewProps) {
         onClose={() => setCreateBoardOpen(false)}
         leadEmail={userEmail}
         onCreate={() =>
-          setToast(
-            "Create-board endpoint lands in Phase 5 — new boards are not yet persisted.",
-          )
+          setToast({
+            message:
+              "Create-board endpoint lands in Phase 5 — new boards are not yet persisted.",
+            variant: "info",
+          })
         }
       />
     </div>
