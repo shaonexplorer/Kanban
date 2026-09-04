@@ -1,8 +1,10 @@
 import express, { type Application } from "express";
+import cookieParser from "cookie-parser";
 import cors from "cors";
 import helmet from "helmet";
 import { errorMiddleware } from "./common/errors/error.middleware.js";
 import { authMiddleware } from "./common/middleware/auth.middleware.js";
+import { config } from "./config/env.js";
 import { authRouter } from "./modules/auth/index.js";
 import { boardInvitationsRouter } from "./modules/board-invitations/index.js";
 import { boardsRouter } from "./modules/boards/index.js";
@@ -15,7 +17,11 @@ import { tasksRouter } from "./modules/tasks/index.js";
  *
  * Middleware:
  *  - helmet:                sets security-related HTTP headers
- *  - cors:                  enables cross-origin requests
+ *  - cors:                  enables cross-origin requests with
+ *                           `credentials: true` so the httpOnly auth
+ *                           cookie can travel from the SPA to the API
+ *  - cookie-parser:         populates `req.cookies` from the Cookie
+ *                           header; required by `authMiddleware`
  *  - express.json():        parses JSON request bodies
  *  - authMiddleware:        attaches decoded user to req.user (non-blocking;
  *                           protected routes use requireAuth to enforce it)
@@ -28,7 +34,29 @@ function createApp(): Application {
 
   // Security & utility middleware
   app.use(helmet());
-  app.use(cors());
+  // CORS allowlist is read from `CORS_ORIGIN` (comma-separated). The
+  // default `http://localhost:3000` covers the local Next.js dev
+  // server. `credentials: true` is required for the httpOnly
+  // `token` cookie to round-trip cross-origin.
+  const allowedOrigins = config.CORS_ORIGIN.split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  app.use(
+    cors({
+      origin: (origin, callback) => {
+        // Allow non-browser requests (curl, server-to-server) where
+        // `origin` is undefined. They don't carry cookies anyway.
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.includes(origin)) return callback(null, true);
+        return callback(new Error(`CORS: origin ${origin} not allowed`));
+      },
+      credentials: true,
+    }),
+  );
+  // Parse the `Cookie` header into `req.cookies`. Must be registered
+  // before any route that reads cookies — `authMiddleware` runs
+  // immediately after, and it reads `req.cookies.token`.
+  app.use(cookieParser());
   app.use(express.json());
 
   // Authentication middleware — attaches req.user when a valid JWT is present.

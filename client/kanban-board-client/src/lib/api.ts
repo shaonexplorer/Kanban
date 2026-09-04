@@ -5,32 +5,23 @@ import axios from "axios";
  *
  * In production, the API may be served from the same origin or a different
  * domain. Use NEXT_PUBLIC_API_URL to override at build time.
+ *
+ * `withCredentials: true` makes the browser attach the httpOnly
+ * `token` cookie (set by `POST /api/auth/register` and
+ * `/api/auth/login`) to every cross-origin request automatically.
+ * The previous `Authorization: Bearer <token>` interceptor that
+ * read from `localStorage` was removed when the auth storage
+ * moved to an httpOnly cookie in Phase 5 Step 8 — the client no
+ * longer has the token (by design), so the browser handles
+ * authentication transparently via the cookie jar.
  */
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api",
   headers: {
     "Content-Type": "application/json",
   },
+  withCredentials: true,
 });
-
-/**
- * Attach the JWT token to requests when available in localStorage.
- */
-api.interceptors.request.use(
-  (config) => {
-    const token =
-      typeof window !== "undefined"
-        ? localStorage.getItem("token")
-        : null;
-
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
 
 export default api;
 

@@ -191,7 +191,7 @@ export default function BoardView({ boardId }: BoardViewProps) {
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
 
-  const { userId, userEmail, clearToken } = useAuth();
+  const { userId, userEmail, signOut } = useAuth();
 
   // Sensors: keyboard only on desktop (compact disables the entire
   // dnd-kit context; tablet uses the pointer sensor only). The
@@ -526,14 +526,15 @@ export default function BoardView({ boardId }: BoardViewProps) {
   const errorReason = useBoardErrorReason(error);
 
   // Sign-out handler for the `auth` error branch. The board view
-  // owns the router; `clearToken` lives on `AuthContext`. The
+  // owns the router; `signOut` lives on `AuthContext` and clears
+  // the httpOnly `token` cookie via `POST /api/auth/logout`. The
   // handler is created unconditionally (no hook inside) so the
   // callback identity stays stable across renders and the
   // `BoardErrorState`'s "Sign in again" button is wired the moment
   // the 401 is detected.
   const router = useRouter();
-  function handleSignOut() {
-    clearToken();
+  async function handleSignOut() {
+    await signOut();
     router.replace("/");
   }
 
@@ -1206,7 +1207,8 @@ function renderTaskModal(args: {
  * Downcast a `useBoardQuery` error to a `BoardErrorReason`.
  *
  *   - 401 → `auth` (session expired; the error state routes the
- *     user to `/` via `clearToken`).
+ *     user to `/` via `signOut`, which clears the httpOnly
+ *     `token` cookie server-side).
  *   - 403 → `forbidden` (no access; the error state links home).
  *   - 404 → `not_found` (deleted board; the error state links home).
  *   - any other HTTP status, or a transport / unknown error →

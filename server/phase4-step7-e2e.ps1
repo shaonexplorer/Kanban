@@ -58,14 +58,14 @@ function Record($name, $ok, $detail) {
   Write-Host $line
 }
 
-function Call($method, $path, $token, $body) {
+function Call($method, $path, $session, $body) {
   $headers = @{ "Content-Type" = "application/json" }
-  if ($token) { $headers["Authorization"] = "Bearer $token" }
   $params = @{
     Method  = $method
     Uri     = "$Base$path"
     Headers = $headers
   }
+  if ($session) { $params.WebSession = $session }
   if ($body) { $params.Body = ($body | ConvertTo-Json -Depth 5) }
 
   $resp  = $null
@@ -126,20 +126,25 @@ if (-not $serverUp) {
 
 if ($serverUp) {
   $reg = Call POST "/api/auth/register" $null @{ email = $U1; password = $Pw }
-  $T1 = (Call POST "/api/auth/login" $null @{ email = $U1; password = $Pw }).Body.token
-  $cb = Call POST "/api/boards" $T1 @{ title = "P7 Float" }
+  # `WebRequestSession` is PowerShell's built-in cookie container —
+  # the server's `Set-Cookie: token=…` header populates it, and
+  # subsequent calls through the same session automatically attach
+  # the cookie.
+  $S1 = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+  Call POST "/api/auth/login" $S1 @{ email = $U1; password = $Pw } | Out-Null
+  $cb = Call POST "/api/boards" $S1 @{ title = "P7 Float" }
   $BR = $cb.Body.id
   Record "VAL-4.4.6 created board" ($cb.Status -eq 201) ("status=$($cb.Status)")
 
   # A.1 -- Create 12 columns. With Float, each append is MAX + 1000.
   $colIds = @()
   for ($i = 0; $i -lt 12; $i += 1) {
-    $r = Call POST "/api/boards/$BR/columns" $T1 @{ title = "K$i" }
+    $r = Call POST "/api/boards/$BR/columns" $S1 @{ title = "K$i" }
     if ($r.Status -eq 201) { $colIds += $r.Body.id } else { break }
   }
   Record "VAL-4.4.6 created 12 columns" ($colIds.Count -eq 12) ("created=$($colIds.Count)")
 
-  $colList = Call GET "/api/boards/$BR/columns" $T1 $null
+  $colList = Call GET "/api/boards/$BR/columns" $S1 $null
   $positions = @($colList.Body | ForEach-Object { $_.position })
 
   # A.2 -- All 12 returned positions are numeric Floats, in 1000-step
@@ -160,13 +165,13 @@ if ($serverUp) {
   # column without disturbing the siblings' positions.
   $firstId = $colIds[0]
   $secondId = $colIds[1]
-  $mv = Call POST "/api/columns/$firstId/move" $T1 @{ toIndex = 5 }
+  $mv = Call POST "/api/columns/$firstId/move" $S1 @{ toIndex = 5 }
   Record "VAL-4.4.6 column-move returns 200" ($mv.Status -eq 200) ("status=$($mv.Status)")
   Record "VAL-4.4.6 moved column's new position is a number" `
     (($mv.Body.position -is [int]) -or ($mv.Body.position -is [double]) -or ($mv.Body.position -is [single])) `
     ("pos=$($mv.Body.position)")
 
-  $colList2 = Call GET "/api/boards/$BR/columns" $T1 $null
+  $colList2 = Call GET "/api/boards/$BR/columns" $S1 $null
   $newOrder = @($colList2.Body | ForEach-Object { $_.id })
   Record "VAL-4.4.6 column-move places moved column at requested index" `
     ($newOrder[5] -eq $firstId) ("newOrder=$($newOrder -join ',')")
@@ -192,7 +197,7 @@ if ($serverUp) {
   # 200 + a numeric position.
   $allOk = $true
   for ($k = 0; $k -lt 5; $k += 1) {
-    $r = Call POST "/api/columns/$secondId/move" $T1 @{ toIndex = ($k % 6) }
+    $r = Call POST "/api/columns/$secondId/move" $S1 @{ toIndex = ($k % 6) }
     if ($r.Status -ne 200 -or $null -eq $r.Body.position) {
       $allOk = $false
       break
@@ -201,7 +206,7 @@ if ($serverUp) {
   Record "VAL-4.4.6 repeated column-moves all return 200 + numeric position" $allOk ""
 
   # A.6 -- Move a column to the very start (index 0).
-  $r = Call POST "/api/columns/$($colIds[8])/move" $T1 @{ toIndex = 0 }
+  $r = Call POST "/api/columns/$($colIds[8])/move" $S1 @{ toIndex = 0 }
   Record "VAL-4.4.6 column-move to index 0 returns 200" ($r.Status -eq 200) ("status=$($r.Status)")
 }
 
@@ -255,13 +260,27 @@ Record "VAL-4.6.2 all relative imports in new server code end in .js" ($nonJsCou
 # change is in the `scripts` field, not in `dependencies`, so we
 # restrict the diff to the `dependencies` and `devDependencies`
 # sections.
+#
+# Phase 5 Step 8 (cookie-based auth migration) is the first
+# intentional exception: it adds `cookie-parser` and
+# `@types/cookie-parser` so `authMiddleware` can read the JWT from
+# the `req.cookies.token` httpOnly cookie. The pattern list below
+# explicitly allows these two names — if a future dep is added,
+# update the pattern (or the original Phase 4 intent of
+# "no new top-level deps" can be revisited).
 $serverPkgFullDiff = & git -C $Script:RepoRoot diff b80b07f^ -- server/package.json 2>&1
 $serverPkgFilteredDiff = $serverPkgFullDiff | Where-Object {
-  $_ -match '^\+.*"dependencies"|^\+.*"devDependencies"|^\+.*"@types/|^\+.*"express"|^\+.*"prisma"|^\+.*"jsonwebtoken"|^\+.*"bcryptjs"|^\+.*"helmet"|^\+.*"cors"|^\+.*"zod"|^\+.*"pg"|^\+.*"@prisma/' -or
-  $_ -match '^-.*"dependencies"|^-.*"devDependencies"|^-.*"@types/|^-.*"express"|^-.*"prisma"|^-.*"jsonwebtoken"|^-.*"bcryptjs"|^-.*"helmet"|^-.*"cors"|^-.*"zod"|^-.*"pg"|^-.*"@prisma/'
+  $_ -match '^\+.*"dependencies"|^\+.*"devDependencies"|^\+.*"@types/|^\+.*"express"|^\+.*"prisma"|^\+.*"jsonwebtoken"|^\+.*"bcryptjs"|^\+.*"helmet"|^\+.*"cors"|^\+.*"zod"|^\+.*"pg"|^\+.*"@prisma/|^\+.*"cookie-parser"' -or
+  $_ -match '^-.*"dependencies"|^-.*"devDependencies"|^-.*"@types/|^-.*"express"|^-.*"prisma"|^-.*"jsonwebtoken"|^-.*"bcryptjs"|^-.*"helmet"|^-.*"cors"|^-.*"zod"|^-.*"pg"|^-.*"@prisma/|^-.*"cookie-parser"'
 }
-$serverPkgDiffStr = ($serverPkgFilteredDiff -join "`n")
-Record "VAL-4.6.3 git diff b80b07f^ -- server/package.json dependencies is empty" `
+# Subtract the documented allowlist (cookie-parser) from the filtered
+# diff. After this subtraction the diff should be empty — anything
+# else is a real regression.
+$serverPkgAllowedDiff = $serverPkgFilteredDiff | Where-Object {
+  $_ -notmatch '^\+.*"cookie-parser"|^\+.*"@types/cookie-parser"|^-.*"cookie-parser"|^-.*"@types/cookie-parser"'
+}
+$serverPkgDiffStr = ($serverPkgAllowedDiff -join "`n")
+Record "VAL-4.6.3 git diff b80b07f^ -- server/package.json dependencies is empty (cookie-parser + @types/cookie-parser are the documented Phase 5 Step 8 exceptions)" `
   ([string]::IsNullOrWhiteSpace($serverPkgDiffStr)) ("filtered-diff-bytes=$($serverPkgDiffStr.Length)")
 
 # B.4 -- VAL-4.6.4: client gained the 4 expected Phase 4 deps
@@ -316,8 +335,13 @@ $inlinePosCount = 0
 $inlinePosPat = '"position"\s*:\s*"'
 $moduleFiles = Get-ChildItem -Path "$Script:ServerDir/src/modules" -Recurse -Filter "*.ts" | ForEach-Object { $_.FullName }
 foreach ($f in $moduleFiles) {
-  $matches = & grep -nE $inlinePosPat $f 2>$null
-  $inlinePosCount += @($matches | Where-Object { $_ -and ($_ -notmatch '^\s*//') }).Count
+  $lines = Get-Content $f
+  for ($i = 0; $i -lt $lines.Count; $i += 1) {
+    $line = $lines[$i]
+    if ($line -match $inlinePosPat -and $line -notmatch '^\s*//') {
+      $inlinePosCount += 1
+    }
+  }
 }
 Record "VAL-4.6.5 no inline position: '...' in server/src/modules" ($inlinePosCount -eq 0) ("violations=$inlinePosCount")
 
@@ -332,8 +356,8 @@ $socketHits = 0
 $socketPat = 'socket\.io|new WebSocket\('
 $serverSrcFiles = Get-ChildItem -Path "$Script:ServerDir/src" -Recurse -Filter "*.ts" | ForEach-Object { $_.FullName }
 foreach ($f in $serverSrcFiles) {
-  $matches = & grep -nE $socketPat $f 2>$null
-  $socketHits += @($matches).Count
+  $content = Get-Content $f -Raw
+  if ($content -match $socketPat) { $socketHits += 1 }
 }
 Record "VAL-4.6.7 no socket.io / new WebSocket( in server/src" ($socketHits -eq 0) ("hits=$socketHits")
 
@@ -388,8 +412,8 @@ Record "VAL-4.6.10 column-move route chain matches REQ-4.4.8" $colMoveChainOk ""
 # positions imports floatPosition.
 $floatImportCount = 0
 foreach ($f in $moduleFiles) {
-  $matches = & grep -nE "from.*floatPosition" $f 2>$null
-  $floatImportCount += @($matches).Count
+  $content = Get-Content $f -Raw
+  if ($content -match 'from.*floatPosition') { $floatImportCount += 1 }
 }
 Record "VAL-4.6.7 (extra) server modules import floatPosition through the helper" `
   ($floatImportCount -ge 1) ("imports=$floatImportCount")

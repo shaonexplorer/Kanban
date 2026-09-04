@@ -3,113 +3,69 @@
 import {
   createContext,
   useCallback,
+  useEffect,
   useMemo,
-  useSyncExternalStore,
+  useState,
   type ReactNode,
 } from "react";
 import api from "@/lib/api";
 
 /**
- * Lightweight auth context for Phase 4.
+ * Auth context for the cookie-based auth flow (Phase 5 Step 8).
  *
- * The server's `/api/auth/register` and `/api/auth/login` endpoints
- * issue a JWT; the existing axios instance in `src/lib/api.ts` reads
- * `localStorage.getItem("token")` on every request and attaches it
- * as `Authorization: Bearer ...`. The `AuthProvider` exposes the
- * same token through context so React components can read it
- * without touching `localStorage` directly.
+ * Previous design (Phase 4–5 Step 7): the JWT was persisted in
+ * `localStorage` under `"token"`, read by the axios request
+ * interceptor, and attached as `Authorization: Bearer ...` on
+ * every request. The user identity (`{ id, email }`) was cached
+ * separately under `"auth.user"`. The whole thing was
+ * subscription-based (`useSyncExternalStore` over the `storage`
+ * event) so React could react to cross-tab sign-outs.
  *
- * The context also surfaces the registered user's `id` and `email`
- * (persisted to `localStorage` under the `auth.user` key). These
- * are populated by `registerWithEmail`; after a token paste they
- * are `null`. Components that need them should treat them as
- * "best effort" — they exist so the sidebar's current-user card
- * can show a real email when one is available, not as a hard
- * identity contract. A real identity model lands in Phase 5.
+ * New design (Phase 5 Step 8): the JWT lives in an httpOnly
+ * `token` cookie the server sets on `POST /api/auth/register` and
+ * `/login`. `localStorage` never holds the token (an XSS payload
+ * can't exfiltrate what JS can't read). The browser attaches the
+ * cookie to every same-origin request automatically, and the
+ * axios instance is configured with `withCredentials: true` so it
+ * also attaches cross-origin. The client therefore never has a
+ * meaningful token *value* to expose — `isAuthenticated` is the
+ * only boolean it can compute, by asking the server.
  *
- * Token state is synced to `localStorage` via `useSyncExternalStore`
- * — the recommended React 19 way to read a non-React external
- * store (like `localStorage`) without triggering a cascading render
- * from a mount-effect.
+ * Identity is fetched on demand from `GET /api/auth/me`:
+ *  - on first mount (the cookie may already be present from a
+ *    previous session; the server's `/me` response confirms it
+ *    and returns the user)
+ *  - after every successful register / login (the cookie was just
+ *    set; we re-fetch `/me` to learn `id` / `email`)
+ *  - after every sign-out (the cookie was just cleared; `/me`
+ *    would 401, so we clear the snapshot directly)
+ *
+ * Cross-component sync is via a custom `kanban-auth-change`
+ * event on `window` — keeping the implementation dead simple
+ * (no external state library) and the SSR story identical (the
+ * event is only dispatched in the browser).
  */
 
-const TOKEN_STORAGE_KEY = "token";
-const USER_STORAGE_KEY = "auth.user";
+const AUTH_CHANGE_EVENT = "kanban-auth-change";
+type AuthChangeReason = "login" | "logout" | "me-ok" | "me-401";
 
-interface StoredUser {
+interface MeResponse {
   id: string;
   email: string;
 }
 
-function subscribeTokenStorage(callback: () => void): () => void {
-  if (typeof window === "undefined") return () => {};
-  // Phase 4 doesn't open multiple tabs of the same board, so the
-  // cheapest correct store is a manual `storage` listener. Phase 5's
-  // real auth UI can swap in a richer channel if needed.
-  window.addEventListener("storage", callback);
-  return () => window.removeEventListener("storage", callback);
-}
-
-function getTokenSnapshot(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(TOKEN_STORAGE_KEY);
-}
-
-function getServerTokenSnapshot(): string | null {
-  // On the server (and during the very first client render) the
-  // storage is empty. The real value hydrates on the first browser
-  // tick via `subscribeTokenStorage` + a client-only snapshot.
-  return null;
-}
-
-// Module-level cache for the parsed user snapshot. `useSyncExternalStore`
-// compares snapshot returns with `Object.is`, which is reference equality
-// for objects. A fresh `{ id, email }` literal on every call would look
-// "different" forever and React would enter an infinite re-render loop
-// the moment `registerWithEmail` / `loginWithEmail` / `clearToken` writes
-// a new entry. The cache is keyed on the raw localStorage string, so
-// repeated calls with the same underlying data return the same reference;
-// a changed raw string triggers a re-parse. Strings/numbers/booleans
-// (`getTokenSnapshot`) don't need this because `Object.is` compares
-// those by value.
-let lastUserRaw: string | null = null;
-let lastUserSnapshot: StoredUser | null = null;
-
-function getUserSnapshot(): StoredUser | null {
-  if (typeof window === "undefined") return null;
-  const raw = window.localStorage.getItem(USER_STORAGE_KEY);
-  if (raw === lastUserRaw) return lastUserSnapshot;
-  lastUserRaw = raw;
-  if (!raw) {
-    lastUserSnapshot = null;
-    return null;
-  }
-  try {
-    const parsed = JSON.parse(raw) as Partial<StoredUser>;
-    if (typeof parsed.id === "string" && typeof parsed.email === "string") {
-      lastUserSnapshot = { id: parsed.id, email: parsed.email };
-      return lastUserSnapshot;
-    }
-    lastUserSnapshot = null;
-    return null;
-  } catch {
-    lastUserSnapshot = null;
-    return null;
-  }
-}
-
-function getServerUserSnapshot(): StoredUser | null {
-  return null;
-}
-
 export interface AuthContextValue {
-  /** The current JWT, or `null` if no token is stored. */
-  token: string | null;
+  /**
+   * True when the user has a valid session. Computed from the
+   * latest `/api/auth/me` response: `null` (loading / unknown) →
+   * `true` (server returned a user) → `false` (server returned
+   * 401 after sign-out or a stale cookie).
+   */
+  isAuthenticated: boolean;
   /**
    * The registered user's id, or `null` if not yet known. Populated
-   * by `registerWithEmail` from the server's register response. After
-   * a token paste or page refresh on a non-register flow, this stays
-   * `null` — treat it as "best effort" identity.
+   * by `/api/auth/me` on first mount and on every successful
+   * register / login. Best-effort identity, not a hard contract.
    */
   userId: string | null;
   /**
@@ -117,176 +73,211 @@ export interface AuthContextValue {
    * `userId` for the same caveat.
    */
   userEmail: string | null;
-  /** Persist a token to localStorage and update context state. */
-  setToken: (token: string) => void;
-  /** Remove the token (and the cached user) from localStorage + context. */
-  clearToken: () => void;
   /**
-   * Dev-only helper: register a new user with a random email and
-   * persist the returned token (and user id/email). Returns the
-   * parsed response.
+   * Register a new user with the given credentials. The server
+   * sets the httpOnly `token` cookie and returns
+   * `{ id, email, token }`; the body token is for non-browser
+   * clients (curl / tests). On success this also re-fetches
+   * `/me` to populate `userId` / `userEmail` and broadcasts an
+   * auth change to other mounted components.
    */
   registerWithEmail: (
     email: string,
     password: string,
   ) => Promise<{ id: string; email: string; token: string }>;
   /**
-   * Phase 5 real auth: sign in an existing user via
-   * `POST /api/auth/login` and persist the returned JWT. The server
-   * does not return the user's `id` on login (it returns
-   * `{ email, token }`), so `userId` stays `null` after a login and
-   * the sidebar's identity chip falls back to the email only.
-   * Returns the parsed response.
+   * Sign in an existing user. Same flow as `registerWithEmail` —
+   * server sets the cookie, then we re-fetch `/me`.
    */
   loginWithEmail: (
     email: string,
     password: string,
   ) => Promise<{ email: string; token: string }>;
+  /**
+   * End the session. Calls `POST /api/auth/logout` (server clears
+   * the httpOnly `token` cookie), clears the local identity
+   * snapshot, and broadcasts an auth change so mounted components
+   * (e.g. `BoardView`'s 401 branch) can navigate to `/`.
+   *
+   * The navigation itself is the caller's responsibility — the
+   * auth context stays router-agnostic.
+   */
+  signOut: () => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextValue>({
-  token: null,
+  isAuthenticated: false,
   userId: null,
   userEmail: null,
-  setToken: () => {},
-  clearToken: () => {},
   registerWithEmail: async () => {
     throw new Error("AuthProvider not mounted");
   },
   loginWithEmail: async () => {
     throw new Error("AuthProvider not mounted");
   },
+  signOut: async () => {
+    throw new Error("AuthProvider not mounted");
+  },
 });
 
-interface RegisterResponse {
-  id: string;
-  email: string;
-  token: string;
+/**
+ * Fetch the current user from `GET /api/auth/me`. Resolves to
+ * `null` on a 401 (no / invalid cookie) so the caller doesn't
+ * have to inspect the error; re-throws on any other failure so
+ * the calling site's existing error UI still fires.
+ */
+async function fetchMe(): Promise<MeResponse | null> {
+  try {
+    const { data } = await api.get<MeResponse>("/auth/me");
+    return data;
+  } catch (err) {
+    if (typeof err === "object" && err !== null) {
+      const status = (err as { response?: { status?: number } }).response
+        ?.status;
+      if (status === 401) return null;
+    }
+    throw err;
+  }
 }
 
-interface LoginResponse {
-  email: string;
-  token: string;
+function broadcastAuthChange(reason: AuthChangeReason): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent<AuthChangeReason>(AUTH_CHANGE_EVENT, { detail: reason }),
+  );
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  // `useSyncExternalStore` reads `localStorage` lazily (no SSR
-  // access, no mount-effect setState) and re-renders when a
-  // `storage` event fires.
-  const token = useSyncExternalStore(
-    subscribeTokenStorage,
-    getTokenSnapshot,
-    getServerTokenSnapshot,
-  );
-  const user = useSyncExternalStore(
-    subscribeTokenStorage,
-    getUserSnapshot,
-    getServerUserSnapshot,
-  );
+  // `null` = "haven't asked the server yet". Components that
+  // gate on `isAuthenticated` should treat `null` as "show a
+  // loading state, not a redirect" — the home page does exactly
+  // that (its "Loading your workspace…" placeholder).
+  const [user, setUser] = useState<{ id: string; email: string } | null>(null);
+  const [bootstrapped, setBootstrapped] = useState(false);
 
-  const setToken = useCallback((next: string) => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(TOKEN_STORAGE_KEY, next);
-      // The `storage` event does NOT fire in the same tab that wrote
-      // the value, so manually notify subscribers to keep React in
-      // sync. We dispatch a synthetic storage event for this.
-      window.dispatchEvent(
-        new StorageEvent("storage", {
-          key: TOKEN_STORAGE_KEY,
-          newValue: next,
-        }),
-      );
-    }
+  // On first mount, ask the server "who am I?". The server reads
+  // the httpOnly cookie via `authMiddleware` and returns
+  // `{ id, email }` if it's still valid, or 401 if it isn't.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const me = await fetchMe();
+      if (cancelled) return;
+      if (me) setUser(me);
+      setBootstrapped(true);
+    })().catch(() => {
+      // Network / 5xx — don't block the app, just leave the user
+      // unauthenticated. The home page's "couldn't load boards"
+      // branch covers the boards list case.
+      if (!cancelled) setBootstrapped(true);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const clearToken = useCallback(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.removeItem(TOKEN_STORAGE_KEY);
-      window.localStorage.removeItem(USER_STORAGE_KEY);
-      window.dispatchEvent(
-        new StorageEvent("storage", {
-          key: TOKEN_STORAGE_KEY,
-          newValue: null,
-        }),
-      );
+  // Cross-component sync. A successful login on one component
+  // (e.g. AuthScreen) should be picked up by the home page
+  // immediately without a full page reload. The custom event
+  // carries the reason so the home page's effect can decide
+  // whether to re-fetch boards (login) or redirect (logout).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    function handle(event: Event) {
+      const reason = (event as CustomEvent<AuthChangeReason>).detail;
+      if (reason === "logout") {
+        setUser(null);
+        return;
+      }
+      if (reason === "login" || reason === "me-ok") {
+        // Re-fetch the canonical identity; the server is the
+        // source of truth for the JWT payload.
+        fetchMe()
+          .then((me) => {
+            if (me) setUser(me);
+          })
+          .catch(() => {
+            // Ignore — the next user action will re-trigger.
+          });
+      }
     }
+    window.addEventListener(AUTH_CHANGE_EVENT, handle);
+    return () => window.removeEventListener(AUTH_CHANGE_EVENT, handle);
   }, []);
+
+  const setIdentityFromAuthResponse = useCallback(
+    (email: string, id?: string) => {
+      // The register response carries `{ id, email, token }` so we
+      // can set the identity directly. The login response carries
+      // only `{ email, token }` — we set the email optimistically
+      // and re-fetch `/me` to fill in the id.
+      if (id) {
+        setUser({ id, email });
+        broadcastAuthChange("me-ok");
+      } else {
+        // Trigger the re-fetch path via the broadcast.
+        broadcastAuthChange("login");
+      }
+    },
+    [],
+  );
 
   const registerWithEmail = useCallback(
     async (email: string, password: string) => {
-      const { data } = await api.post<RegisterResponse>("/auth/register", {
-        email,
-        password,
-      });
-      setToken(data.token);
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(
-          USER_STORAGE_KEY,
-          JSON.stringify({ id: data.id, email: data.email }),
-        );
-        window.dispatchEvent(
-          new StorageEvent("storage", { key: USER_STORAGE_KEY }),
-        );
-      }
+      const { data } = await api.post<{
+        id: string;
+        email: string;
+        token: string;
+      }>("/auth/register", { email, password });
+      setIdentityFromAuthResponse(data.email, data.id);
       return data;
     },
-    [setToken],
+    [setIdentityFromAuthResponse],
   );
 
   const loginWithEmail = useCallback(
     async (email: string, password: string) => {
-      // `POST /api/auth/login` returns `{ email, token }` (no `id`).
-      // We persist the token via the same `setToken` helper so the
-      // request interceptor in `lib/api.ts` attaches it on the next
-      // call, and we refresh the cached user (email only — `id`
-      // is unknown to the client until a profile route lands in a
-      // later phase).
-      const { data } = await api.post<LoginResponse>("/auth/login", {
-        email,
-        password,
-      });
-      setToken(data.token);
-      if (typeof window !== "undefined") {
-        // Preserve any prior cached `id` so a quick-switch between
-        // accounts doesn't wipe a known good value; otherwise leave
-        // it absent so the sidebar shows the email without a fake
-        // identifier.
-        const existingRaw = window.localStorage.getItem(USER_STORAGE_KEY);
-        let cachedId: string | undefined;
-        if (existingRaw) {
-          try {
-            const parsed = JSON.parse(existingRaw) as Partial<StoredUser>;
-            if (typeof parsed.id === "string") cachedId = parsed.id;
-          } catch {
-            // Ignore malformed cache — we'll write a fresh entry.
-          }
-        }
-        window.localStorage.setItem(
-          USER_STORAGE_KEY,
-          JSON.stringify(
-            cachedId ? { id: cachedId, email: data.email } : { email: data.email },
-          ),
-        );
-        window.dispatchEvent(
-          new StorageEvent("storage", { key: USER_STORAGE_KEY }),
-        );
-      }
+      const { data } = await api.post<{ email: string; token: string }>(
+        "/auth/login",
+        { email, password },
+      );
+      setIdentityFromAuthResponse(data.email);
       return data;
     },
-    [setToken],
+    [setIdentityFromAuthResponse],
   );
+
+  const signOut = useCallback(async () => {
+    // Fire-and-forget the network call. The server's `Set-Cookie:
+    // token=; Max-Age=0` is what actually ends the session; the
+    // local state update below is what unmounts the gated UI.
+    try {
+      await api.post("/auth/logout");
+    } catch {
+      // Even on a network error, clear the local state so the
+      // UI is responsive. The cookie may still be valid until
+      // the user closes the tab, but they'll be sent to the
+      // auth screen either way.
+    }
+    setUser(null);
+    broadcastAuthChange("logout");
+  }, []);
 
   const value = useMemo<AuthContextValue>(
     () => ({
-      token,
+      // `bootstrapped` flips true once the first `/me` has resolved
+      // (either with a user or with a 401). Before that we report
+      // `false` to keep the redirect logic in `BoardViewGate` from
+      // bouncing the user to `/` while we're still figuring out
+      // whether the cookie is present.
+      isAuthenticated: bootstrapped && user !== null,
       userId: user?.id ?? null,
       userEmail: user?.email ?? null,
-      setToken,
-      clearToken,
       registerWithEmail,
       loginWithEmail,
+      signOut,
     }),
-    [token, user, setToken, clearToken, registerWithEmail, loginWithEmail],
+    [bootstrapped, user, registerWithEmail, loginWithEmail, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

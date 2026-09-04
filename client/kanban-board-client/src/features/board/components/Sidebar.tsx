@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Icon, type IconName } from "./Icon";
 import { SidebarHeader } from "./SidebarHeader";
 import { UserAvatar } from "./UserAvatar";
@@ -62,18 +62,31 @@ const primaryNav: PrimaryNavItem[] = [
  * visual-only for now — only Boards links somewhere real (`/`).
  *
  * The bottom card shows the registered email from `useAuth()`. If
- * the user signed in via token paste (no `auth.user` in
- * localStorage), the email is `null` and the card shows a generic
- * "Workspace user" placeholder.
+ * the server's `GET /api/auth/me` hasn't returned yet (the cookie
+ * is present but the `/me` fetch is in flight), the email is
+ * `null` and the card shows a generic "Workspace user" placeholder.
  */
 export function Sidebar({ collapsed = false }: SidebarProps = {}) {
   const pathname = usePathname();
-  const { userEmail } = useAuth();
+  const router = useRouter();
+  const { userEmail, signOut } = useAuth();
   const boards = useMyBoardsQuery();
 
   const widthClass = collapsed
     ? "w-sidebar-collapsed"
     : "w-sidebar-expanded";
+
+  // Sign-out handler for the bottom user card's logout button
+  // (Phase 5 Step 8). `signOut` clears the httpOnly `token`
+  // cookie server-side via `POST /api/auth/logout`; the
+  // subsequent `router.replace("/")` is what unmounts the gated
+  // board view. The handler is async — `signOut` returns a
+  // Promise that resolves once the server has cleared the
+  // cookie (or once a network error has been swallowed).
+  async function handleSignOut() {
+    await signOut();
+    router.replace("/");
+  }
 
   return (
     <aside
@@ -304,11 +317,13 @@ export function Sidebar({ collapsed = false }: SidebarProps = {}) {
           {collapsed ? null : (
             <button
               type="button"
-              aria-label="User preferences"
-              title="Preferences (coming in Phase 5)"
+              aria-label="Sign out"
+              title="Sign out"
+              data-testid="sidebar-signout"
+              onClick={handleSignOut}
               className="size-7 flex items-center justify-center rounded-lg text-outline hover:text-on-surface hover:bg-surface-container-high transition-colors"
             >
-              <Icon name="more_horiz" className="w-5 h-5" />
+              <Icon name="logout" className="w-5 h-5" />
             </button>
           )}
         </div>

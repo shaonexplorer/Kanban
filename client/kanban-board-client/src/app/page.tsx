@@ -34,7 +34,7 @@ import { useOverlayState } from "@/features/board/overlays/useOverlayState";
  */
 export default function Home() {
   const router = useRouter();
-  const { token } = useAuth();
+  const { isAuthenticated } = useAuth();
   const { createBoardOpen, closeCreateBoard, openCreateBoard } =
     useOverlayState();
   const createBoard = useCreateBoardMutation();
@@ -48,7 +48,7 @@ export default function Home() {
   >(null);
 
   useEffect(() => {
-    if (!token) return;
+    if (!isAuthenticated) return;
     let cancelled = false;
     (async () => {
       try {
@@ -70,9 +70,9 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [token, router]);
+  }, [isAuthenticated, router]);
 
-  if (!token) {
+  if (!isAuthenticated) {
     return <AuthScreen />;
   }
 

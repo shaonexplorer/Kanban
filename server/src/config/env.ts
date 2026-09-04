@@ -16,6 +16,17 @@ const EnvSchema = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
   BCRYPT_SALT_ROUNDS: z.coerce.number().int().positive().default(12),
   JWT_EXPIRES_IN: z.string().default("7d"),
+  // The origin the SPA runs on. Used to scope the CORS allowlist so
+  // the httpOnly auth cookie can travel cross-origin in dev
+  // (localhost:3000 → localhost:4000) and production. Comma-separated
+  // for multiple allowed origins.
+  CORS_ORIGIN: z.string().default("http://localhost:3000"),
+  // Toggles `Secure` on the auth cookie. In dev (HTTP) we leave it
+  // off because browsers ignore `Secure` cookies on plain HTTP. In
+  // production / staging behind HTTPS it must be `production`.
+  NODE_ENV: z
+    .enum(["development", "production", "test"])
+    .default("development"),
 });
 
 export type AppEnv = z.infer<typeof EnvSchema>;

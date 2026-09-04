@@ -12,20 +12,22 @@ export interface BoardViewGateProps {
 /**
  * Auth gate for the board view. The Next.js 16 page (`page.tsx`) is
  * a server component that resolves `params`; this client wrapper
- * checks `localStorage` for a JWT (REQ-4.5.4) and renders the
- * heavy `BoardView` only when one is present.
+ * checks the auth context's `isAuthenticated` flag (backed by
+ * `GET /api/auth/me` and the httpOnly `token` cookie in Phase 5
+ * Step 8) and renders the heavy `BoardView` only when the user
+ * has a valid session.
  */
 export default function BoardViewGate({ boardId }: BoardViewGateProps) {
-  const { token } = useAuth();
+  const { isAuthenticated } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!token) {
+    if (!isAuthenticated) {
       router.replace("/");
     }
-  }, [token, router]);
+  }, [isAuthenticated, router]);
 
-  if (!token) {
+  if (!isAuthenticated) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-zinc-500 dark:text-zinc-400">
         Redirecting to sign-in…

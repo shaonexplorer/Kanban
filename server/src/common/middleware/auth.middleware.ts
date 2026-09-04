@@ -5,20 +5,27 @@ import { config } from "../../config/env.js";
 /**
  * Authentication middleware.
  *
- * Extracts the JWT from the `Authorization: Bearer <token>` header,
- * verifies it, and attaches the decoded user payload to `req.user`.
+ * Extracts the JWT from the httpOnly `token` cookie set by
+ * `POST /api/auth/register` and `/login`, verifies it, and attaches
+ * the decoded user payload to `req.user`.
  *
- * If the token is missing or invalid, `req.user` is left undefined and
- * the request is allowed to continue. Use `requireAuth` on protected
- * routes to actually reject unauthenticated requests.
+ * The cookie path is the **only** token source — the previous
+ * `Authorization: Bearer` header path was removed when the auth
+ * storage moved from `localStorage` to an httpOnly cookie (see the
+ * `phase05` Step 8 plan). Setting the cookie + using
+ * `cookie-parser` is the responsibility of the upstream routes
+ * (see `setAuthCookie` in `modules/auth/auth.controller.ts`).
+ *
+ * If the token is missing or invalid, `req.user` is left undefined
+ * and the request is allowed to continue. Use `requireAuth` on
+ * protected routes to actually reject unauthenticated requests.
  */
 export function authMiddleware(
   req: Request,
   _res: Response,
   next: NextFunction
 ): void {
-  const authHeader = req.headers.authorization;
-  const token = authHeader && authHeader.split(" ")[1];
+  const token = req.cookies?.token;
 
   if (!token) {
     next();

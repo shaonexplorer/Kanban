@@ -1,5 +1,7 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/features/auth/useAuth";
 import { Icon } from "./Icon";
 
 export interface EmptyBoardsStateProps {
@@ -19,11 +21,24 @@ export interface EmptyBoardsStateProps {
  * `<p role="status">` with a centered card + a "Create your first
  * board" primary button that opens the `CreateBoardDrawer`.
  *
+ * A quiet "Sign out" button (Phase 5 Step 8) sits below the primary
+ * CTA so a freshly-registered user with no boards can switch
+ * accounts without first having to create something. Same `signOut`
+ * + `router.replace("/")` shape as the sidebar's sign-out button.
+ *
  * This component is purely presentational — it owns no state and
  * has no `useEffect`. The home page decides *when* to show it
  * (after the boards fetch resolves with an empty array).
  */
 export function EmptyBoardsState({ onCreateBoard }: EmptyBoardsStateProps) {
+  const router = useRouter();
+  const { signOut } = useAuth();
+
+  async function handleSignOut() {
+    await signOut();
+    router.replace("/");
+  }
+
   return (
     <div
       role="region"
@@ -50,6 +65,17 @@ export function EmptyBoardsState({ onCreateBoard }: EmptyBoardsStateProps) {
           <Icon name="add" className="w-4 h-4" />
           Create your first board
         </button>
+        <div className="mt-space-md">
+          <button
+            type="button"
+            onClick={handleSignOut}
+            data-testid="empty-boards-signout"
+            className="inline-flex items-center justify-center gap-space-xs text-outline hover:text-on-surface font-label-ui-sm text-label-ui-sm transition-colors"
+          >
+            <Icon name="logout" className="w-4 h-4" />
+            Sign out
+          </button>
+        </div>
       </div>
     </div>
   );
