@@ -9,8 +9,10 @@ import { asyncHandler } from "../../common/utils/asyncHandler.js";
 import { validate } from "../../common/validators/validate.middleware.js";
 import * as tasksController from "./tasks.controller.js";
 import {
+  ColumnAndTaskIdParamSchema,
   ColumnScopedTaskParamSchema,
   CreateTaskSchema,
+  MoveTaskSchema,
   TaskIdParamSchema,
   UpdateTaskSchema,
 } from "./tasks.validation.js";
@@ -18,9 +20,10 @@ import {
 /**
  * Router for the `tasks` module.
  *
- * Mounts TWO URL subtrees on a single `/api` mount point:
- *   - `/api/columns/:columnId/tasks`   (column-scoped: list, create)
- *   - `/api/tasks/:id`                 (task-scoped: get, update, delete)
+ * Mounts THREE URL subtrees on a single `/api` mount point:
+ *   - `/api/columns/:columnId/tasks`            (column-scoped: list, create)
+ *   - `/api/columns/:columnId/tasks/:taskId/move` (move, Phase 4 Step 3)
+ *   - `/api/tasks/:id`                          (task-scoped: get, update, delete)
  *
  * Middleware chain patterns:
  *  - Column-scoped routes use
@@ -29,15 +32,23 @@ import {
  *  - Task-scoped routes use
  *    `requireAuth → validate(TaskIdParamSchema, "params")
  *     → loadTask() → requireBoardAccess`.
+ *  - The move route (Phase 4 Step 3) chains
+ *    `requireAuth → validate(ColumnAndTaskIdParamSchema, "params")
+ *     → loadColumn("params", "columnId") → loadTask("params", "taskId")
+ *     → requireBoardAccess → validate(MoveTaskSchema)`. Both loaders
+ *    populate `req.board`; the `requireBoardAccess` check runs against
+ *    the source column's board. The destination's board is verified by
+ *    the service's defensive check (cross-board moves are 403).
  *  - `loadColumn()` and `loadTask()` both populate `req.board` (and
  *    `req.column` where applicable), so the existing
  *    `requireBoardAccess` middleware chains behind them unchanged.
  *  - Param validation runs BEFORE the resource loader so a non-UUID id
  *    returns 400 instead of 404.
  *
- * Phase 3 reuses `requireBoardAccess` for ALL task mutations — both
+ * Phase 3/4 reuses `requireBoardAccess` for ALL task mutations — both
  * owners and accepted members can author content on a shared board.
- * Task reordering and cross-column moves are reserved for Phase 4.
+ * `position` and `columnId` are only ever changed via the move
+ * endpoint; `PATCH /api/tasks/:id` still does not accept them.
  */
 const router = Router();
 
@@ -65,6 +76,22 @@ router.post(
   requireBoardAccess,
   validate(CreateTaskSchema),
   asyncHandler(tasksController.createTask)
+);
+
+// Move a task — Phase 4 Step 3. Same-column reorder and cross-column
+// moves both flow through this endpoint. The middleware chain loads
+// the source column AND the source task so `requireBoardAccess` can
+// authorize against the source's board. The destination's board is
+// verified by the service's defensive check (cross-board → 403).
+router.post(
+  "/columns/:columnId/tasks/:taskId/move",
+  requireAuth,
+  validate(ColumnAndTaskIdParamSchema, "params"),
+  loadColumn("params", "columnId"),
+  loadTask("params", "taskId"),
+  requireBoardAccess,
+  validate(MoveTaskSchema),
+  asyncHandler(tasksController.moveTask)
 );
 
 // ---------------------------------------------------------------------------

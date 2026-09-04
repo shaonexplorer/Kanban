@@ -1,0 +1,25 @@
+/* Motion tokens for Phase 5.
+ *
+ * Lives next to `tokens.css` so the existing `@import` chain in
+ * `src/app/globals.css` brings the design language (colors, type,
+ * spacing, motion) in one go. The motion tokens are also exposed
+ * as Tailwind v4 `@theme` keys so utility classes like
+ * `duration-(--duration-medium)` and `ease-(--ease-standard)` work
+ * without a config extension.
+ *
+ * Step 1 of Phase 5 only consumes `--duration-slow` and
+ * `--ease-standard` (for the sidebar width transition + drawer
+ * slide-in). The other tokens are defined here too so Step 3
+ * (the broader motion language) doesn't need a separate file.
+ *
+ * Reference: `specs/Phase05/Plan.md` §3 + `Requirements.md` §4
+ * (REQ-5.1.16, REQ-5.1.18).
+ */
+
+@theme {
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.3, 0, 0, 1);
+  --duration-fast: 120ms;
+  --duration-medium: 200ms;
+  --duration-slow: 320ms;
+}

@@ -4,6 +4,7 @@ import type {
   BoardScopedColumnParam,
   ColumnIdParam,
   CreateColumnInput,
+  MoveColumnInput,
   ReorderColumnsInput,
   UpdateColumnInput,
 } from "./columns.validation.js";
@@ -124,4 +125,26 @@ export async function deleteColumn(
 
   await columnsService.deleteColumn(userId, columnId);
   res.status(204).send();
+}
+
+/**
+ * POST /api/columns/:id/move — re-position a column on its own board
+ * (Phase 4 Step 4). The body's `{ toIndex }` declares the column's
+ * intended zero-based position in the board's column list AFTER the
+ * move; the service clamps out-of-range values to "append to the end"
+ * and computes the new lexo position with `lexoPosition.between` (or
+ * a board-level re-pack on a `null` return).
+ *
+ * Returns 200 with the moved column in the standard `ColumnItem` shape.
+ */
+export async function moveColumn(
+  req: Request,
+  res: Response
+): Promise<void> {
+  const { id: userId } = req.user!;
+  const { id: columnId } = req.params as ColumnIdParam;
+  const input = req.body as MoveColumnInput;
+
+  const column = await columnsService.moveColumn(userId, columnId, input);
+  res.status(200).json(column);
 }

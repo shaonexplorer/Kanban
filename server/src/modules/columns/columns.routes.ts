@@ -12,6 +12,7 @@ import {
   BoardScopedColumnParamSchema,
   ColumnIdParamSchema,
   CreateColumnSchema,
+  MoveColumnSchema,
   ReorderColumnsSchema,
   UpdateColumnSchema,
 } from "./columns.validation.js";
@@ -21,7 +22,7 @@ import {
  *
  * Mounts TWO URL subtrees on a single `/api` mount point:
  *   - `/api/boards/:boardId/columns`   (board-scoped: list, create, reorder)
- *   - `/api/columns/:id`               (column-scoped: get, update, delete)
+ *   - `/api/columns/:id`               (column-scoped: get, update, delete, move)
  *
  * Middleware chain patterns:
  *  - Board-scoped routes use
@@ -35,8 +36,13 @@ import {
  *  - Param validation runs BEFORE the resource loader so a non-UUID id
  *    returns 400 instead of 404.
  *
- * Phase 3 reuses `requireBoardAccess` for ALL column mutations — both
+ * Phase 3/4 reuses `requireBoardAccess` for ALL column mutations — both
  * owners and accepted members can author content on a shared board.
+ *
+ * Phase 4 Step 4 adds the single-column move endpoint
+ * `POST /api/columns/:id/move`. It lives under the column-scoped subtree
+ * (not `/reorder`) because the URL describes the action on a specific
+ * column, mirroring the task-move endpoint in `tasks.routes.ts`.
  */
 const router = Router();
 
@@ -111,6 +117,18 @@ router.delete(
   loadColumn(),
   requireBoardAccess,
   asyncHandler(columnsController.deleteColumn)
+);
+
+// Re-position a column on its own board (Phase 4 Step 4). The body
+// declares the new index; the service picks the new lexo position.
+router.post(
+  "/columns/:id/move",
+  requireAuth,
+  validate(ColumnIdParamSchema, "params"),
+  loadColumn(),
+  requireBoardAccess,
+  validate(MoveColumnSchema),
+  asyncHandler(columnsController.moveColumn)
 );
 
 export default router;

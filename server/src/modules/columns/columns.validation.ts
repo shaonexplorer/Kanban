@@ -6,6 +6,7 @@ import { z } from "zod";
  * - `CreateColumnSchema`             — body for `POST /api/boards/:boardId/columns`.
  * - `UpdateColumnSchema`             — body for `PATCH /api/columns/:id`.
  * - `ReorderColumnsSchema`           — body for `PATCH /api/boards/:boardId/columns/reorder`.
+ * - `MoveColumnSchema`               — body for `POST /api/columns/:id/move` (Phase 4 Step 4).
  * - `BoardScopedColumnParamSchema`   — `req.params` for any `/api/boards/:boardId/columns/...` route.
  * - `ColumnIdParamSchema`            — `req.params` for any `/api/columns/:id` route.
  *
@@ -44,6 +45,22 @@ export const ReorderColumnsSchema = z.object({
   columnIds: z.array(z.string().uuid()).min(1),
 });
 export type ReorderColumnsInput = z.infer<typeof ReorderColumnsSchema>;
+
+/**
+ * Body for `POST /api/columns/:id/move` (Phase 4 Step 4).
+ *  - toIndex: zero-based index in the board's column list AFTER the move.
+ *    Values larger than the board's column count are clamped to "append
+ *    to the end"; negative values are rejected with 400 by the
+ *    `z.number().int().min(0)` constraint.
+ *
+ * No `toBoardId` field — a column is moved within its own board, and
+ * the board is already established by the middleware chain
+ * (`loadColumn → requireBoardAccess`).
+ */
+export const MoveColumnSchema = z.object({
+  toIndex: z.number().int().min(0),
+});
+export type MoveColumnInput = z.infer<typeof MoveColumnSchema>;
 
 /**
  * Path params for any `/api/boards/:boardId/columns/...` route.

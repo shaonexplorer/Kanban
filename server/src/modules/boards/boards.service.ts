@@ -38,12 +38,12 @@ export interface BoardDetail {
   columns: Array<{
     id: string;
     title: string;
-    position: number;
+    position: string;
     tasks: Array<{
       id: string;
       title: string;
       description: string | null;
-      position: number;
+      position: string;
       createdAt: Date;
     }>;
   }>;
@@ -126,6 +126,16 @@ export { assertBoardAccess, assertBoardOwner, loadActiveBoard };
 
 /**
  * Create a new board owned by `ownerId`.
+ *
+ * Phase 5 Step 5 widens the input shape to accept the new optional
+ * `projectKey`, `colorIdentity`, and `template` fields (so the
+ * `CreateBoardDrawer` can round-trip its full Stitch-faithful form).
+ * The corresponding Prisma columns ship with the Step 10
+ * `phase05_polish` migration. The schema is unchanged in this
+ * pass, so the service **does not** forward these fields to
+ * `prisma.board.create` — Prisma 7's typed client rejects unknown
+ * fields at runtime. The `CreateBoardInput` type is the wire
+ * contract; the database persistence is a Step 10 deliverable.
  */
 export async function createBoard(
   ownerId: string,
@@ -255,7 +265,17 @@ export async function getBoardById(
 }
 
 /**
- * Update the board's title. Owner only.
+ * Update the board's title and / or link-sharing setting. Owner only.
+ *
+ * Phase 5 Step 5 widens the input shape to accept the optional
+ * `linkSharing` field (the share-modal "Anyone with the link can
+ * view" toggle). The Prisma column ships with the Step 10
+ * `phase05_polish` migration. The schema is unchanged in this
+ * pass, so the service **does not** forward the `linkSharing`
+ * field to `prisma.board.update` — Prisma 7's typed client
+ * rejects unknown fields at runtime. The `UpdateBoardInput`
+ * type is the wire contract; the database persistence is a
+ * Step 10 deliverable.
  */
 export async function updateBoard(
   userId: string,
@@ -265,9 +285,16 @@ export async function updateBoard(
   const board = await loadActiveBoard(boardId);
   assertBoardOwner(userId, board);
 
+  // Build the patch from defined keys only — never pass `undefined`
+  // through to Prisma's `data` (which would otherwise overwrite the
+  // column with NULL). The `linkSharing` field is intentionally
+  // excluded from the Prisma write until Step 10.
+  const data: { title?: string } = {};
+  if (input.title !== undefined) data.title = input.title;
+
   const updated = await prisma.board.update({
     where: { id: boardId },
-    data: { title: input.title },
+    data,
     select: { id: true, title: true, ownerId: true, createdAt: true },
   });
   return updated;
