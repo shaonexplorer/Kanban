@@ -98,30 +98,22 @@ function Call($method, $path, $token, $body) {
   return @{ Status = $code; Body = $parsed; Raw = $raw }
 }
 
-# Replicate lexoPosition.rePackKey() from
-# server/src/common/utils/lexoPosition.ts so we can assert the
-# column/task positions match the V-tail sequence after a re-pack.
-function Get-RepackKey([int]$i) {
-  $chunkSize = 8  # MAX_LENGTH - 2 = 8 positions per tier
-  $tier = [Math]::Floor($i / $chunkSize)
-  $n = $i % $chunkSize
-  $alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-  if ($tier -lt 26) {
-    $prefix = $alphabet[36 + $tier]
-  } elseif ($tier -lt 52) {
-    $prefix = $alphabet[10 + ($tier - 26)]
-  } else {
-    $prefix = $alphabet[$tier - 52]
-  }
-  if ($n -eq 0) { return "$prefix" + "0" }
-  return "$prefix" + "0" + ("V" * $n)
+# Helper: compute the expected Float position for the i-th appended
+# column or task. Mirrors server/src/common/utils/floatPosition.ts.
+function Get-FloatPos([int]$i) {
+  return (($i + 1) * 1000)
 }
 
 # ===========================================================================
-# SECTION A -- VAL-4.4.6 (column-move re-pack interop)
+# SECTION A -- VAL-4.4.6 (column-move Float interop)
 # ===========================================================================
+# Phase 5 simplification: positions are Floats (MAX + 1000 for append,
+# (prev + next) / 2 for between, (i + 1) * 1000 for re-pack). No
+# re-pack fallback. Section A verifies the column-move endpoint behaves
+# correctly against the Float scheme: positions are numeric, append
+# spacing is 1000, mid-list moves don't disturb siblings.
 Write-Host ""
-Write-Host "==== Section A: VAL-4.4.6 column-move re-pack ===="
+Write-Host "==== Section A: VAL-4.4.6 column-move (Float) ===="
 
 # Check the server is reachable up front so Section A can fail
 # clearly rather than producing cascading 0/0 results.
@@ -135,14 +127,11 @@ if (-not $serverUp) {
 if ($serverUp) {
   $reg = Call POST "/api/auth/register" $null @{ email = $U1; password = $Pw }
   $T1 = (Call POST "/api/auth/login" $null @{ email = $U1; password = $Pw }).Body.token
-  $cb = Call POST "/api/boards" $T1 @{ title = "P7 RePack" }
+  $cb = Call POST "/api/boards" $T1 @{ title = "P7 Float" }
   $BR = $cb.Body.id
   Record "VAL-4.4.6 created board" ($cb.Status -eq 201) ("status=$($cb.Status)")
 
-  # A.1 -- Create 12 columns. After ~8 creates the open-ended
-  # between(max, null) exhausts, and createColumn's re-pack
-  # fallback fires. The first 8 columns should be re-keyed to
-  # the V-tail sequence.
+  # A.1 -- Create 12 columns. With Float, each append is MAX + 1000.
   $colIds = @()
   for ($i = 0; $i -lt 12; $i += 1) {
     $r = Call POST "/api/boards/$BR/columns" $T1 @{ title = "K$i" }
@@ -152,32 +141,29 @@ if ($serverUp) {
 
   $colList = Call GET "/api/boards/$BR/columns" $T1 $null
   $positions = @($colList.Body | ForEach-Object { $_.position })
-  $ids = @($colList.Body | ForEach-Object { $_.id })
 
-  # A.2 -- The first 8 positions should be the V-tail re-pack
-  # sequence a0, a0V, a0VV, ..., a0VVVVVVV.
-  $repackMatched = $true
-  for ($j = 0; $j -lt 8; $j += 1) {
-    $expected = Get-RepackKey $j
-    if ($positions[$j] -ne $expected) {
-      $repackMatched = $false
+  # A.2 -- All 12 returned positions are numeric Floats, in 1000-step
+  # ascending order: 1000, 2000, 3000, ..., 12000.
+  $expectedPositions = @(1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 11000, 12000)
+  $posMatched = $true
+  for ($j = 0; $j -lt $expectedPositions.Count; $j += 1) {
+    if ([double]$positions[$j] -ne [double]$expectedPositions[$j]) {
+      $posMatched = $false
       break
     }
   }
   $posSummary = if ($positions) { ($positions | Select-Object -First 12) -join ',' } else { "n/a" }
-  Record "VAL-4.4.6 first 8 positions match V-tail rePackKey sequence" $repackMatched ("firstFew=$posSummary")
+  Record "VAL-4.4.6 column positions are 1000-step Floats" $posMatched ("got=$posSummary")
 
-  # A.3 -- Move a column from one position to another. After the
-  # re-pack, every column's position is on the V-tail sequence
-  # or a derived lexo position. The move endpoint should produce
-  # a new position for the moved column without disturbing the
-  # siblings' positions.
+  # A.3 -- Move a column from one position to another. The move
+  # endpoint should produce a new Float position for the moved
+  # column without disturbing the siblings' positions.
   $firstId = $colIds[0]
   $secondId = $colIds[1]
   $mv = Call POST "/api/columns/$firstId/move" $T1 @{ toIndex = 5 }
-  Record "VAL-4.4.6 column-move on re-packed board returns 200" ($mv.Status -eq 200) ("status=$($mv.Status)")
-  Record "VAL-4.4.6 moved column's new position is a non-empty string" `
-    ((-not [string]::IsNullOrEmpty($mv.Body.position)) -and ($mv.Body.position -is [string])) `
+  Record "VAL-4.4.6 column-move returns 200" ($mv.Status -eq 200) ("status=$($mv.Status)")
+  Record "VAL-4.4.6 moved column's new position is a number" `
+    (($mv.Body.position -is [int]) -or ($mv.Body.position -is [double]) -or ($mv.Body.position -is [single])) `
     ("pos=$($mv.Body.position)")
 
   $colList2 = Call GET "/api/boards/$BR/columns" $T1 $null
@@ -195,28 +181,28 @@ if ($serverUp) {
   foreach ($row in $colList2.Body) {
     if ($row.id -eq $firstId) { continue }
     $pre = $preMoveMap[$row.id]
-    if ($pre -ne $row.position) {
+    if ([double]$pre -ne [double]$row.position) {
       $allUnchanged = $false
       $changed += "$($row.id): $pre -> $($row.position)"
     }
   }
   Record "VAL-4.4.6 sibling column positions unchanged after move" $allUnchanged ("changed=$($changed -join ';')")
 
-  # A.5 -- Repeated column-move on a re-packed board: 5
-  # successive moves all return 200 + non-empty position.
+  # A.5 -- Repeated column-move: 5 successive moves all return
+  # 200 + a numeric position.
   $allOk = $true
   for ($k = 0; $k -lt 5; $k += 1) {
     $r = Call POST "/api/columns/$secondId/move" $T1 @{ toIndex = ($k % 6) }
-    if ($r.Status -ne 200 -or [string]::IsNullOrEmpty($r.Body.position)) {
+    if ($r.Status -ne 200 -or $null -eq $r.Body.position) {
       $allOk = $false
       break
     }
   }
-  Record "VAL-4.4.6 repeated column-moves on re-packed board all return 200 + non-empty position" $allOk ""
+  Record "VAL-4.4.6 repeated column-moves all return 200 + numeric position" $allOk ""
 
-  # A.6 -- Move a column to the very start on a re-packed board.
+  # A.6 -- Move a column to the very start (index 0).
   $r = Call POST "/api/columns/$($colIds[8])/move" $T1 @{ toIndex = 0 }
-  Record "VAL-4.4.6 column-move to index 0 on re-packed board returns 200" ($r.Status -eq 200) ("status=$($r.Status)")
+  Record "VAL-4.4.6 column-move to index 0 returns 200" ($r.Status -eq 200) ("status=$($r.Status)")
 }
 
 # ===========================================================================
@@ -241,11 +227,12 @@ $clientTscTail = (($clientTsc | Select-Object -Last 3) -join ' | ')
 Record "VAL-4.6.1 client tsc --noEmit exit 0" ($clientTscExit -eq 0) ("exit=$clientTscExit; tail=$clientTscTail")
 
 # B.2 -- VAL-4.6.2: every relative import in new server code ends
-# in .js. We scan lexoPosition + the columns + tasks modules.
-$lexoPath = "$Script:ServerDir/src/common/utils/lexoPosition.ts"
+# in .js. We scan the floatPosition + columns + tasks modules
+# (Phase 5 removed lexoPosition, replaced by floatPosition).
+$floatPath = "$Script:ServerDir/src/common/utils/floatPosition.ts"
 $colsFiles = Get-ChildItem -Path "$Script:ServerDir/src/modules/columns" -Recurse -Filter "*.ts" | ForEach-Object { $_.FullName }
 $tasksFiles = Get-ChildItem -Path "$Script:ServerDir/src/modules/tasks"   -Recurse -Filter "*.ts" | ForEach-Object { $_.FullName }
-$allFiles = @($lexoPath) + @($colsFiles) + @($tasksFiles)
+$allFiles = @($floatPath) + @($colsFiles) + @($tasksFiles)
 
 $nonJsCount = 0
 $importPat = 'from [''"][.][.]?/[^''"]+[''"]'
@@ -324,7 +311,7 @@ Record "VAL-4.6.4 client gained the 4 expected deps and no surprise packages" `
   $addedOk ("present=$($present -join ','); surprise=$($surpriseAdds -join ',')")
 
 # B.5 -- VAL-4.6.5: no module produces or consumes `position`
-# strings inline. All position math must go through lexoPosition.
+# strings inline. All position math flows through floatPosition.
 $inlinePosCount = 0
 $inlinePosPat = '"position"\s*:\s*"'
 $moduleFiles = Get-ChildItem -Path "$Script:ServerDir/src/modules" -Recurse -Filter "*.ts" | ForEach-Object { $_.FullName }
@@ -398,14 +385,14 @@ $colMoveChainOk = ($colsRoutes -match 'requireAuth') -and
 Record "VAL-4.6.10 column-move route chain matches REQ-4.4.8" $colMoveChainOk ""
 
 # B.11 -- extra: every server module that produces or consumes
-# position strings imports lexoPosition.
-$lexoImportCount = 0
+# positions imports floatPosition.
+$floatImportCount = 0
 foreach ($f in $moduleFiles) {
-  $matches = & grep -nE "from.*lexoPosition" $f 2>$null
-  $lexoImportCount += @($matches).Count
+  $matches = & grep -nE "from.*floatPosition" $f 2>$null
+  $floatImportCount += @($matches).Count
 }
-Record "VAL-4.6.7 (extra) server modules import lexoPosition through the helper" `
-  ($lexoImportCount -ge 1) ("imports=$lexoImportCount")
+Record "VAL-4.6.7 (extra) server modules import floatPosition through the helper" `
+  ($floatImportCount -ge 1) ("imports=$floatImportCount")
 
 # ===========================================================================
 # SECTION C -- VAL-4.5 (frontend static-analysis)

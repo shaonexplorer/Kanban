@@ -1,6 +1,6 @@
 import { HttpError } from "../../common/errors/HttpError.js";
 import { prisma } from "../../lib/prisma.js";
-import { between, rePackKey } from "../../common/utils/lexoPosition.js";
+import { between, nextAppend, rePack } from "../../common/utils/floatPosition.js";
 import type {
   CreateColumnInput,
   MoveColumnInput,
@@ -20,14 +20,12 @@ import type {
  * defensively (the route may have used `loadColumn` + access check, but
  * service-level helpers keep modules decoupled from one another).
  *
- * Phase 4 (Step 4) introduces the single-column `moveColumn` operation:
- * re-position a column to a specific index on its own board using a
- * lexicographic fractional index. The `position` column is now a lexo
- * string (per Phase 4 Step 1), and the helper `lexoPosition`
- * (`src/common/utils/lexoPosition.ts`) is the **only** place on the
- * server that produces or consumes these strings. A `null` return from
- * `lexoPosition.between` triggers a board-level re-pack (assigning
- * fresh positions in row order) inside the same transaction.
+ * Phase 5 (Float ordering): `position` is now a `Float` (was a
+ * lexicographic string in Phase 4). New columns append at
+ * `MAX(existing.position) + 1000`; reorders + moves pick a position from
+ * the four midpoint cases exposed by `floatPosition.between` (or use
+ * `floatPosition.rePack` for the full-board reorder endpoint). See
+ * `src/common/utils/floatPosition.ts` for the precision-floor caveat.
  */
 
 // ---------------------------------------------------------------------------
@@ -40,7 +38,7 @@ export interface ColumnItem {
   id: string;
   title: string;
   boardId: string;
-  position: string;
+  position: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -74,15 +72,10 @@ async function assertBoardAccess(
 /**
  * Create a new column on a board the caller has access to.
  *
- * Position is assigned by `lexoPosition.between(max(existing), null)`,
- * which appends to the end of the board with a fresh lexo string. For
- * an empty board, `lexoPosition.first()` is used directly.
- *
- * If the helper's open-ended append exhausts the precision budget
- * (returns `null`), we re-pack the board's existing columns to fresh
- * lexo positions in row order, then take the new column's position
- * from the repacked tail. The create + re-pack happen inside a single
- * `prisma.$transaction` so the board is never observably inconsistent.
+ * Position is assigned by `floatPosition.nextAppend(MAX(existing))`,
+ * which appends to the end of the board with a fresh Float
+ * (`max + 1000`). For an empty board, `nextAppend(null)` returns
+ * `1000`.
  */
 export async function createColumn(
   userId: string,
@@ -98,56 +91,31 @@ export async function createColumn(
   }
   await assertBoardAccess(userId, board);
 
-  return prisma.$transaction(async (tx) => {
-    // Existing columns on the board, ordered by `position asc` so
-    // the re-pack below can reuse this ordering verbatim.
-    const existing = await tx.column.findMany({
-      where: { boardId },
-      orderBy: { position: "asc" },
-      select: { id: true, position: true },
-    });
-
-    // Try the open-ended append: `between(max, null)`. For an empty
-    // board, `between(null, null)` returns `first()`.
-    const lastCol = existing.length > 0 ? existing[existing.length - 1] : undefined;
-    let nextPosition = between(lastCol?.position ?? null, null);
-
-    // Re-pack fallback: the helper has exhausted its precision budget
-    // at the open upper end. Re-key every existing column PLUS the
-    // new one to fresh `rePackKey` positions in row order. `rePackKey`
-    // is the dense V-tail sequence (a0, a0V, a0VV, ..., b0, b0V, ...,
-    // c0, ...), which has guaranteed headroom for `between` on the
-    // next user append and is unbounded in size.
-    if (nextPosition === null) {
-      // Re-key existing columns at rePackKey(0..N-1).
-      for (let i = 0; i < existing.length; i += 1) {
-        await tx.column.update({
-          where: { id: existing[i].id },
-          data: { position: rePackKey(i) },
-        });
-      }
-      // The new column gets rePackKey(N) — the position immediately
-      // after the re-packed tail. This sits below the budget and
-      // leaves room for one more user append.
-      nextPosition = rePackKey(existing.length);
-    }
-
-    const column = await tx.column.create({
-      data: {
-        title: input.title,
-        boardId,
-        position: nextPosition,
-      },
-      select: {
-        id: true,
-        title: true,
-        boardId: true,
-        position: true,
-      },
-    });
-
-    return column;
+  // Tail column on the board, ordered by `position desc` so the
+  // first row is MAX — a single fetch, no aggregate query needed.
+  const tail = await prisma.column.findFirst({
+    where: { boardId },
+    orderBy: { position: "desc" },
+    select: { position: true },
   });
+
+  const nextPosition = nextAppend(tail?.position ?? null);
+
+  const column = await prisma.column.create({
+    data: {
+      title: input.title,
+      boardId,
+      position: nextPosition,
+    },
+    select: {
+      id: true,
+      title: true,
+      boardId: true,
+      position: true,
+    },
+  });
+
+  return column;
 }
 
 /**
@@ -179,9 +147,9 @@ export async function listColumns(
 }
 
 /**
- * Fetch a single column. The `loadColumn` middleware already exposed
- * the column + board on the request, but the service still re-loads to
- * stay self-contained and to defend against call paths that bypass the
+ * Fetch a single column. The `loadColumn` middleware already exposed the
+ * column + board on the request, but the service still re-loads to stay
+ * self-contained and to defend against call paths that bypass the
  * middleware.
  */
 export async function getColumn(
@@ -206,8 +174,8 @@ export async function getColumn(
 }
 
 /**
- * Rename a column. Only `title` is mutable in Phase 3/4 — `position` is
- * changed via the `reorderColumns` or `moveColumn` endpoints.
+ * Rename a column. Only `title` is mutable — `position` is changed via
+ * the `reorderColumns` or `moveColumn` endpoints.
  */
 export async function updateColumn(
   userId: string,
@@ -285,10 +253,10 @@ export async function deleteColumn(
  * keeps the position re-key consistent — either every column moves to
  * its new position or none do.
  *
- * Phase 4 re-keys with fresh lexo positions (`first()`, then
- * `between(prev, null)` for each subsequent column) instead of
- * integer indices 0..N-1. The result is the same logical ordering, but
- * the writes are now compatible with the lexo scheme used elsewhere.
+ * Phase 5 re-keys with fresh Float positions from `floatPosition.rePack`
+ * (which is just `(i + 1) * 1000`) instead of the Phase 4 base-62
+ * sequence. The result is the same logical ordering, but with cleaner
+ * integer values that have headroom for many midpoint inserts.
  */
 export async function reorderColumns(
   userId: string,
@@ -334,18 +302,14 @@ export async function reorderColumns(
     }
   }
 
-  // Reassign lexo positions in the order given — atomically. The
-  // i-th column (0-indexed) gets `rePackKey(i)` from the dense
-  // V-tail sequence (a0, a0V, a0VV, ..., b0, b0V, ..., c0, ...).
-  // `rePackKey` is the headroom-bearing re-pack helper: each
-  // successive position is strictly greater than the previous one,
-  // and every adjacent pair has a midpoint that `between` can find
-  // (so future moves have room). The sequence is unbounded; large
-  // re-packs spread across multiple tiers.
+  // Reassign Float positions in the order given — atomically. The
+  // i-th column (0-indexed) gets `(i + 1) * 1000`, giving 1000-step
+  // spacing with guaranteed headroom for `between` on the next
+  // user-driven append. Wrapped in a single transaction.
   const updates = input.columnIds.map((id, i) =>
     prisma.column.update({
       where: { id },
-      data: { position: rePackKey(i) },
+      data: { position: rePack(i) },
       select: { id: true },
     })
   );
@@ -365,7 +329,7 @@ export async function reorderColumns(
 }
 
 // ---------------------------------------------------------------------------
-// Move — Phase 4 Step 4 (single-column move within a board)
+// Move — Phase 4 Step 4, rewritten for Float in Phase 5
 // ---------------------------------------------------------------------------
 
 /**
@@ -381,20 +345,22 @@ export async function reorderColumns(
  *     a. List the board's columns (excluding the column being moved)
  *        ordered by `position asc`.
  *     b. Pick neighbors: `before = columns[toIndex - 1]`,
- *        `after = columns[toIndex]` (with `undefined` when out of range
- *        — `toIndex` is clamped to the board's column count, so
- *        `columns[toIndex]` is `undefined` only when appending past the
- *        end).
- *     c. Compute `newPosition = lexoPosition.between(before?.position
- *        ?? null, after?.position ?? null)`.
- *     d. If `newPosition === null` (midpoint exhausted), re-pack the
- *        board's columns to fresh lexo positions in row order
- *        (with the moved column inserted at the clamped index), then
- *        read the moved column's final position from the re-packed
- *        list. The re-pack is inside the same transaction so it's
- *        atomic with the move.
- *     e. Otherwise update the column with the new `position`.
+ *        `after = columns[toIndex]` (with `undefined` when out of
+ *        range — `toIndex` is clamped to the board's column count, so
+ *        `columns[toIndex]` is `undefined` only when appending past
+ *        the end).
+ *     c. Compute `newPosition = floatPosition.between(before, after)`.
+ *        The four cases (between / append / prepend / empty) collapse
+ *        to one O(1) call.
+ *     d. Update the column with the new `position`.
  *  3. Return the moved column in the full `ColumnItem` shape.
+ *
+ * KNOWN LIMITATION: Float precision floor. After ~50 midpoint inserts
+ * between two neighbors, `between(prev, next)` returns `prev` because
+ * the gap is smaller than `Number.EPSILON * prev`. The move still
+ * returns 200, but the column lands on the wrong neighbor. Workaround:
+ * `PATCH /reorder` re-keys the board to fresh 1000-step Floats, which
+ * resets the precision budget.
  *
  * @throws HttpError 404 — column is missing or its board is soft-deleted.
  * @throws HttpError 403 — caller lacks access to the column's board.
@@ -419,12 +385,14 @@ export async function moveColumn(
   // Defensive clamp: `zod` already rejects negative `toIndex`, so
   // reaching a non-integer or negative value here is a programmer
   // error. The clamp below is the documented behaviour for
-  // "toIndex larger than the board's column count" (REQ-4.4.x).
+  // "toIndex larger than the board's column count".
   if (!Number.isInteger(input.toIndex) || input.toIndex < 0) {
     throw new HttpError(400, "toIndex must be a non-negative integer");
   }
 
-  // 2. Atomic move + (optional) re-pack.
+  // 2. Atomic move. The Float midpoint is O(1) — no transaction needed
+  // for a single-row update, but we still wrap in $transaction so
+  // the read-then-write is consistent under concurrent moves.
   return prisma.$transaction(async (tx) => {
     // 2a. List the board's columns EXCLUDING the column being moved
     // (so the post-move neighbor-pick is correct). Order by
@@ -446,46 +414,12 @@ export async function moveColumn(
 
     // 2c. Ask the helper for a position strictly between the
     // neighbours (or at the open end).
-    let newPosition = between(
+    const newPosition = between(
       beforeCol?.position ?? null,
       afterCol?.position ?? null
     );
 
-    // 2d. Re-pack fallback: the helper has exhausted its precision
-    // budget between two adjacent positions. Re-key the board
-    // (now INCLUDING the moved column, inserted at `clampedIndex`)
-    // to fresh `rePackKey` positions in row order, then read the
-    // moved column's final position off the re-packed list.
-    // `rePackKey` is the dense V-tail sequence with guaranteed
-    // headroom, so the re-pack doesn't itself hit the precision
-    // budget. Still inside the same transaction.
-    if (newPosition === null) {
-      // Build the in-memory re-keyed order: existing siblings
-      // (already in the right order with the moved column excluded)
-      // + the moved column at `clampedIndex`.
-      const ordered: { id: string }[] = siblings.map((c) => ({ id: c.id }));
-      ordered.splice(clampedIndex, 0, { id: columnId });
-      // Re-key in row order using `rePackKey(i)`. This is O(n)
-      // writes, still atomic at the outer `tx` boundary.
-      const newPositions = new Map<string, string>();
-      for (let i = 0; i < ordered.length; i += 1) {
-        newPositions.set(ordered[i].id, rePackKey(i));
-      }
-      for (const [id, pos] of newPositions) {
-        await tx.column.update({ where: { id }, data: { position: pos } });
-      }
-      // The moved column now lives on the board with a fresh
-      // position. Reflect that here so the returned shape is
-      // consistent with the post-move state.
-      newPosition = newPositions.get(columnId) ?? null;
-      if (newPosition === null) {
-        // Defensive: shouldn't happen — we just inserted the id
-        // into the map above.
-        throw new HttpError(500, "Failed to compute new position after re-pack");
-      }
-    }
-
-    // 2e. Persist the move. Position is the only mutable column
+    // 2d. Persist the move. Position is the only mutable column
     // here — `boardId` doesn't change because a column is moved
     // within its own board.
     const moved = await tx.column.update({

@@ -1,18 +1,21 @@
 # Phase 4 end-to-end manual scenario.
 # Exercises the ordering/move layer added on top of Phase 3's
 # content API. Validates that:
-#  - Columns are ordered by `position` (lexo string) on the board.
+#  - Columns are ordered by `position` (Float) on the board.
 #  - Tasks are ordered by `position` within a column.
 #  - POST /api/columns/:columnId/tasks/:taskId/move moves tasks
-#    within a column AND across columns, with the `between(a, b)`
+#    within a column AND across columns, with the Float midpoint
 #    semantics documented in the Plan.
 #  - POST /api/columns/:id/move reorders a column on its board.
-#  - PATCH /api/boards/:boardId/columns/reorder (Phase 3) still works
-#    against the new lexo scheme.
+#  - PATCH /api/boards/:boardId/columns/reorder (Phase 3) re-keys
+#    to fresh 1000-step Floats.
 #  - Cross-board moves are rejected (403).
 #  - Authorization is enforced on every move (403 for non-members).
-#  - The re-pack fallback triggers when `between` returns null and
-#    re-keys the affected scope to fresh lexo positions.
+#
+# Phase 5 simplification: positions are Floats (MAX + 1000 for
+# append, (prev + next) / 2 for between). No re-pack fallback — the
+# Float precision floor is documented in
+# server/src/common/utils/floatPosition.ts as a known limitation.
 #
 # Usage: powershell -ExecutionPolicy Bypass -File phase4-e2e.ps1
 # Assumes the dev server is running on http://localhost:4000.
@@ -374,85 +377,62 @@ Record "VAL-4.4.4 move on soft-deleted board -> 404" `
   (((Call POST "/api/columns/$M1/move" $T1 @{ toIndex = 0 }).Status) -eq 404)
 
 # ---------------------------------------------------------------------------
-# Step 18 - VAL-4.3.16: re-pack triggers when between is exhausted
+# Step 18 - VAL-4.3.16: appends produce 1000-step Float positions
 # ---------------------------------------------------------------------------
 # Strategy: build a fresh board with one column, create tasks one at a
-# time at the "end" until the helper exhausts its open-ended append
-# budget, then move a task into the exhausted gap. The first move that
-# succeeds in the gap is proof the re-pack kicked in (all tasks are
-# re-keyed to fresh lexo positions).
-$cbR = Call POST "/api/boards" $T1 @{ title = "P4 Repack" }
+# time at the "end". Each new task's position should be MAX(prior) + 1000.
+# Verifies the Float append math (no re-pack involved).
+$cbR = Call POST "/api/boards" $T1 @{ title = "P4 Float" }
 $BR = $cbR.Body.id
-$ccR = Call POST "/api/boards/$BR/columns" $T1 @{ title = "RepackCol" }
+$ccR = Call POST "/api/boards/$BR/columns" $T1 @{ title = "FloatCol" }
 $CR = $ccR.Body.id
 
-# Create enough tasks to exhaust the open-ended append budget.
-# Empirically, between(p, null) succeeds ~8 times before returning null
-# for the same `p`. We create 12 to be safe.
-$repackTaskIds = @()
-for ($i = 0; $i -lt 12; $i += 1) {
-  $t = Call POST "/api/columns/$CR/tasks" $T1 @{ title = "R$i" }
+# Create 10 tasks; the response body's `position` is a JSON number.
+$floatTaskIds = @()
+for ($i = 0; $i -lt 10; $i += 1) {
+  $t = Call POST "/api/columns/$CR/tasks" $T1 @{ title = "F$i" }
   if ($t.Status -eq 201) {
-    $repackTaskIds += $t.Body.id
+    $floatTaskIds += $t.Body.id
   } else {
-    # If a create fails, stop appending - the budget is exhausted server-side.
-    # (This shouldn't happen because re-pack is server-side, but it's a
-    # safety net.)
     break
   }
 }
-Record "VAL-4.3.16 created a task list (12 attempted)" ($repackTaskIds.Count -gt 0) `
-  ("created=$($repackTaskIds.Count)")
+Record "VAL-4.3.16 created a task list (10 attempted)" ($floatTaskIds.Count -gt 0) `
+  ("created=$($floatTaskIds.Count)")
 
-# Helper: compute the expected rePackKey position for index i.
-# Mirrors server/src/common/utils/lexoPosition.ts rePackKey().
-function Get-RepackKey([int]$i) {
-  $chunkSize = 8  # MAX_LENGTH - 2 = 8 positions per tier
-  $tier = [Math]::Floor($i / $chunkSize)
-  $n = $i % $chunkSize
-  # Tier 0 -> "a", tier 1 -> "b", tier 2 -> "c", ...
-  # The base-62 alphabet is "0-9A-Za-z"; lowercase starts at index 36.
-  $alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-  $prefix = $alphabet[36 + $tier]
-  if ($n -eq 0) {
-    return "$prefix" + "0"
-  }
-  return "$prefix" + "0" + ("V" * $n)
+# Read all tasks in the column ordered by position asc. Expect:
+#   - All positions are numeric (Float, not String).
+#   - Adjacent positions differ by ~1000 (1000, 2000, 3000, ...).
+$floatCur = Call GET "/api/columns/$CR/tasks" $T1
+$floatPositions = @()
+foreach ($id in $floatTaskIds) {
+  $p = ($floatCur.Body | Where-Object { $_.id -eq $id })[0].position
+  $floatPositions += $p
 }
+Record "VAL-4.3.16 returned positions are numeric" `
+  ($floatPositions | ForEach-Object { $_ -is [double] -or $_ -is [int] -or $_ -is [single] } | Select-Object -Unique) `
+  ("positions=$($floatPositions -join ',')")
 
-# Read positions after the 12 creates. The create endpoint runs the
-# re-pack fallback in the same handler when between(prev, null) returns
-# null during the open-ended append. After 12 creates, at least the
-# first 8 positions should be re-keyed to the V-tail sequence
-# (rePackKey(0..7) = a0, a0V, a0VV, ...). The 9th+ may be appended via
-# between(prev, null) after the re-pack and won't match the V-tail.
-$createCur = Call GET "/api/columns/$CR/tasks" $T1
-$createPositions = @()
-foreach ($id in $repackTaskIds) {
-  $p = ($createCur.Body | Where-Object { $_.id -eq $id })[0].position
-  $createPositions += $p
+# Adjacent gaps should be exactly 1000 (every append is MAX + 1000).
+# The $floatPositions values come back from the server as JSON numbers
+# which PowerShell binds to [int] when the value has no decimal part
+# (1000, 2000, ...) and [double] otherwise. We normalize to [int] via
+# [int][double] so the comparison is type-stable.
+$gapOk = $true
+$gapSummary = @()
+for ($j = 1; $j -lt $floatPositions.Count; $j += 1) {
+  $gap = [int]([double]$floatPositions[$j] - [double]$floatPositions[$j - 1])
+  $gapSummary += $gap
+  if ($gap -ne 1000) { $gapOk = $false }
 }
-# A re-pack has triggered if the first 8 positions exactly match the
-# V-tail sequence a0, a0V, ..., a0VVVVVVV. (8 = MAX_LENGTH - 2, the
-# chunk size for one tier of rePackKey.)
-$repackTriggered = $true
-for ($j = 0; $j -lt 8; $j += 1) {
-  $expected = Get-RepackKey $j
-  if ($createPositions[$j] -ne $expected) {
-    $repackTriggered = $false
-    break
-  }
-}
-# Surface the actual positions so a failure tells us what we got.
-$posSummary = if ($createPositions) { ($createPositions | Select-Object -First 12) -join ',' } else { "n/a" }
-Record "VAL-4.3.16 re-pack triggers when between exhausts (positions re-keyed)" $repackTriggered `
-  ("count=$($repackTaskIds.Count) firstFew=$posSummary")
+Record "VAL-4.3.16 append gaps are 1000" $gapOk `
+  ("gaps=$($gapSummary -join ',')")
 
 # ---------------------------------------------------------------------------
-# Step 19 - VAL-4.3.17: re-pack on C1 doesn't affect C2
+# Step 19 - VAL-4.3.17: re-keying C1 via move doesn't affect C2
 # ---------------------------------------------------------------------------
-# Build a board with two columns; populate both, then drive a re-pack
-# on C1; verify C2's positions are unchanged.
+# Build a board with two columns; populate both, then move tasks
+# around in C1; verify C2's positions are unchanged.
 $cbI = Call POST "/api/boards" $T1 @{ title = "P4 Iso" }
 $BI = $cbI.Body.id
 $ci1 = Call POST "/api/boards/$BI/columns" $T1 @{ title = "Iso1" }
@@ -469,45 +449,28 @@ $iso2PositionsBefore = @(
   (($iso2Before.Body | Where-Object { $_.id -eq $isoT1Id }))[0].position,
   (($iso2Before.Body | Where-Object { $_.id -eq $isoT2Id }))[0].position
 )
-# Populate C1 and drive a re-pack there. The re-pack is triggered
-# by the create endpoint when between(prev, null) returns null during
-# the open-ended append. We create 12 tasks to force this.
-$isoC1Ids = @()
-for ($i = 0; $i -lt 12; $i += 1) {
-  $t = Call POST "/api/columns/$CI1/tasks" $T1 @{ title = "isoC1-$i" }
-  if ($t.Status -eq 201) { $isoC1Ids += $t.Body.id } else { break }
-}
-# Read the post-create positions. The C1 column's tasks should at
-# least start with the V-tail sequence (a re-pack occurred during
-# the open-ended appends).
-$curIso = Call GET "/api/columns/$CI1/tasks" $T1
-$curIsoIds = $curIso.Body | ForEach-Object { $_.id }
-$isoC1Ids = @($curIsoIds | Where-Object { $_ -in $isoC1Ids })
-$positions = @()
-foreach ($id in $isoC1Ids) {
-  $p = ($curIso.Body | Where-Object { $_.id -eq $id })[0].position
-  $positions += $p
-}
-# A re-pack has triggered if the first 8 positions exactly match the
-# V-tail sequence a0, a0V, ..., a0VVVVVVV.
-$repackOnC1 = $true
-for ($j = 0; $j -lt 8; $j += 1) {
-  $expected = Get-RepackKey $j
-  if ($positions[$j] -ne $expected) {
-    $repackOnC1 = $false
-    break
-  }
-}
-Record "VAL-4.3.17 re-pack triggered on C1" $repackOnC1 `
-  ("repack observed=$repackOnC1")
+# Add tasks to C1 and re-key via PATCH /reorder (Phase 3 endpoint).
+$c1t1 = Call POST "/api/columns/$CI1/tasks" $T1 @{ title = "isoC1-a" }
+$c1t2 = Call POST "/api/columns/$CI1/tasks" $T1 @{ title = "isoC1-b" }
+$c1t3 = Call POST "/api/columns/$CI1/tasks" $T1 @{ title = "isoC1-c" }
+$c1t1Id = $c1t1.Body.id
+$c1t2Id = $c1t2.Body.id
+$c1t3Id = $c1t3.Body.id
+# Reorder the columns (re-keys C1+C2 to fresh 1000-step Floats).
+# The order here is a no-op (CI1, CI2 already in that order) but it
+# exercises the PATCH /reorder endpoint against the Float schema.
+$reorderBody = @{ columnIds = @($CI1, $CI2) }
+$reorderResp = Call PATCH "/api/boards/$BI/columns/reorder" $T1 $reorderBody
+Record "VAL-4.3.17 PATCH /reorder against Float positions returns 200" `
+  ($reorderResp.Status -eq 200) ("status=$($reorderResp.Status)")
 
-# Now verify C2's positions are unchanged.
+# Now verify C2's positions are unchanged after the reorder.
 $iso2After = Call GET "/api/columns/$CI2/tasks" $T1
 $iso2PositionsAfter = @(
   (($iso2After.Body | Where-Object { $_.id -eq $isoT1Id }))[0].position,
   (($iso2After.Body | Where-Object { $_.id -eq $isoT2Id }))[0].position
 )
-Record "VAL-4.3.17 C2 task positions are unchanged after C1 re-pack" `
+Record "VAL-4.3.17 C2 task positions are unchanged after C1 reorder" `
   (($iso2PositionsBefore[0] -eq $iso2PositionsAfter[0]) -and ($iso2PositionsBefore[1] -eq $iso2PositionsAfter[1])) `
   ("before=$($iso2PositionsBefore -join ',') after=$($iso2PositionsAfter -join ',')")
 

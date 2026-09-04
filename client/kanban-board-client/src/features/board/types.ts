@@ -12,7 +12,7 @@ export interface Task {
   id: string;
   title: string;
   description: string | null;
-  position: string;
+  position: number;
   columnId: string;
   createdAt: string;
 }
@@ -20,7 +20,7 @@ export interface Task {
 export interface Column {
   id: string;
   title: string;
-  position: string;
+  position: number;
   tasks: Task[];
 }
 

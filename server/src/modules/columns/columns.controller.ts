@@ -128,12 +128,11 @@ export async function deleteColumn(
 }
 
 /**
- * POST /api/columns/:id/move — re-position a column on its own board
- * (Phase 4 Step 4). The body's `{ toIndex }` declares the column's
- * intended zero-based position in the board's column list AFTER the
- * move; the service clamps out-of-range values to "append to the end"
- * and computes the new lexo position with `lexoPosition.between` (or
- * a board-level re-pack on a `null` return).
+ * POST /api/columns/:id/move — re-position a column on its own board.
+ * The body's `{ toIndex }` declares the column's intended zero-based
+ * position in the board's column list AFTER the move; the service
+ * clamps out-of-range values to "append to the end" and computes the
+ * new Float position with `floatPosition.between`.
  *
  * Returns 200 with the moved column in the standard `ColumnItem` shape.
  */
