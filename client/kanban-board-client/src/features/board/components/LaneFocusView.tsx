@@ -6,15 +6,21 @@ import { Column } from "../Column";
 import type { BoardDetail } from "../types";
 
 export interface LaneFocusViewProps {
+  /** The id of the board the column belongs to. Passed through to
+   *  the `Column` so the per-column quick-add mutation can key its
+   *  optimistic cache write. */
+  boardId: string;
   board: BoardDetail;
-  /** Called when the user submits a new task in the focused column. */
-  onAddTask: (columnId: string, title: string) => void;
   /** Status dot color rotation (same as the desktop columns). */
   statusTokens: ReadonlyArray<"tertiary" | "secondary" | "primary" | "outline">;
   /** Ids of items currently mid-mutation — used to dim the column. */
   inFlightIds: Set<string>;
   /** When true, this column is the source/destination of an active drag. */
   isAnyDragging: boolean;
+  /** Called when the quick-add mutation fails. The parent typically
+   *  surfaces this as a toast so the user knows the input is still
+   *  editable. */
+  onQuickAddError?: (message: string) => void;
 }
 
 /**
@@ -30,13 +36,19 @@ export interface LaneFocusViewProps {
  * dnd-kit `DndContext` on compact), so the `inFlightIds` /
  * `isAnyDragging` props are passed straight through to the
  * `Column` for visual consistency.
+ *
+ * Phase 5 Step 2: the per-column inline `QuickAddTask` (owned by
+ * `Column` / `ColumnShell`) is the only task-creation surface on
+ * the compact tier — the previous `window.prompt()` fallback is
+ * gone.
  */
 export function LaneFocusView({
+  boardId,
   board,
-  onAddTask,
   statusTokens,
   inFlightIds,
   isAnyDragging,
+  onQuickAddError,
 }: LaneFocusViewProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const stripRef = useRef<HTMLDivElement | null>(null);
@@ -134,9 +146,11 @@ export function LaneFocusView({
                     className={[
                       "font-label-mono-sm text-label-mono-sm",
                       "px-1.5 py-0.5 rounded-full shrink-0",
+                      "transition-opacity duration-(--duration-medium) ease-standard",
                       isActive
                         ? "bg-primary-fixed-dim text-on-primary"
                         : "bg-surface-container-high text-on-surface-variant",
+                      column.tasks.length === 0 ? "opacity-60" : "opacity-100",
                     ].join(" ")}
                   >
                     {column.tasks.length}
@@ -166,21 +180,13 @@ export function LaneFocusView({
         className="flex-1 overflow-y-auto board-scroll px-space-md py-space-md"
       >
         <Column
+          boardId={boardId}
           column={activeColumn}
           inFlightIds={inFlightIds}
           isAnyDragging={isAnyDragging}
           statusToken={statusToken}
           compactMode
-          onAddTask={(columnId) => {
-            // Re-use the prompt() flow on compact for now — the
-            // proper inline quick-add input is Phase 5 Step 2.
-            const title = window.prompt(
-              `Task title for "${board.columns.find((c) => c.id === columnId)?.title ?? columnId}"`,
-            );
-            if (title && title.trim()) {
-              onAddTask(columnId, title.trim());
-            }
-          }}
+          onQuickAddError={onQuickAddError}
         />
       </div>
     </div>

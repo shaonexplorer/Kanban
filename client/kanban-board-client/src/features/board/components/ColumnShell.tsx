@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import {
   SortableContext,
@@ -9,9 +10,13 @@ import { CSS } from "@dnd-kit/utilities";
 import type { CSSProperties } from "react";
 import { TaskCardShell } from "./TaskCardShell";
 import { Icon } from "./Icon";
+import { QuickAddTask } from "./QuickAddTask";
 import type { Column } from "../types";
 
 export interface ColumnShellProps {
+  /** The id of the board the column belongs to. Used to key the
+   *  TanStack mutation's optimistic cache write. */
+  boardId: string;
   column: Column;
   /** Ids of items currently mid-mutation — used to dim the column. */
   inFlightIds: Set<string>;
@@ -21,8 +26,10 @@ export interface ColumnShellProps {
    * modeled server-side; the dot uses the column's index-based
    * hash so each column gets a stable color across renders. */
   statusToken?: "tertiary" | "secondary" | "primary" | "outline";
-  /** Called when the per-column "+" button is pressed (no-op default). */
-  onAddTask?: (columnId: string) => void;
+  /** Called when the quick-add mutation fails. The parent typically
+   *  surfaces this as a toast so the user knows the input is still
+   *  editable. */
+  onQuickAddError?: (message: string) => void;
   /** When true, render the column at full width inside the
    *  compact "lane focus" view. The column's `useSortable` is
    *  still wired (so the dnd-kit types stay consistent) but
@@ -57,13 +64,20 @@ const statusRingClass: Record<
  * Phase 4 `Column` — same `useSortable` wiring, same nested
  * `SortableContext`, same `inFlightIds` dim semantics — only the
  * markup is new.
+ *
+ * Phase 5 Step 2 replaces the previous "Add Task" button + parent
+ * `onAddTask` callback with an inline `QuickAddTask` form owned by
+ * the column. The header "+" button and the footer button are now
+ * the same affordance — both expand the same form via the
+ * `quickAddOpen` state.
  */
 export function ColumnShell({
+  boardId,
   column,
   inFlightIds,
   isAnyDragging,
   statusToken = "outline",
-  onAddTask,
+  onQuickAddError,
   compactMode = false,
 }: ColumnShellProps) {
   const {
@@ -85,6 +99,11 @@ export function ColumnShell({
 
   const taskIds = column.tasks.map((t) => t.id);
   const columnDimmed = inFlightIds.has(column.id);
+
+  // The header "+" and the footer affordance both control the same
+  // form. Keeping the state here (rather than inside `QuickAddTask`)
+  // means both buttons can open the same inline form below.
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
 
   return (
     <section
@@ -118,7 +137,15 @@ export function ColumnShell({
           <h3 className="font-headline-sm text-headline-sm text-on-surface truncate">
             {column.title}
           </h3>
-          <span className="font-label-mono-sm text-label-mono-sm px-1.5 py-0.5 rounded-full bg-surface-container text-on-surface-variant shrink-0">
+          <span
+            className={[
+              "font-label-mono-sm text-label-mono-sm",
+              "px-1.5 py-0.5 rounded-full bg-surface-container",
+              "text-on-surface-variant shrink-0",
+              "transition-opacity duration-(--duration-medium) ease-standard",
+              column.tasks.length === 0 ? "opacity-60" : "opacity-100",
+            ].join(" ")}
+          >
             {column.tasks.length}
           </span>
         </div>
@@ -129,7 +156,7 @@ export function ColumnShell({
             onClick={(e) => {
               // Don't let a click on + propagate to the drag handle.
               e.stopPropagation();
-              onAddTask?.(column.id);
+              setQuickAddOpen(true);
             }}
             className="size-6 flex items-center justify-center rounded text-outline hover:text-on-surface hover:bg-surface-container-high transition-colors"
           >
@@ -177,14 +204,13 @@ export function ColumnShell({
           </div>
         ) : null}
 
-        <button
-          type="button"
-          onClick={() => onAddTask?.(column.id)}
-          className="w-full flex items-center justify-center gap-1 py-space-xs mt-space-xs rounded-lg text-outline hover:text-on-surface hover:bg-surface-container transition-colors font-label-ui-md text-label-ui-md"
-        >
-          <Icon name="add" className="w-5 h-5" />
-          <span>Add Task</span>
-        </button>
+        <QuickAddTask
+          boardId={boardId}
+          columnId={column.id}
+          open={quickAddOpen}
+          onOpenChange={setQuickAddOpen}
+          onError={onQuickAddError}
+        />
       </div>
     </section>
   );

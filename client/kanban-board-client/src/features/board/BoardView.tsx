@@ -479,19 +479,12 @@ export default function BoardView({ boardId }: BoardViewProps) {
            * dnd-kit context. */}
           {isCompact ? (
             <LaneFocusView
+              boardId={boardId}
               board={board}
               statusTokens={statusTokens}
               inFlightIds={inFlightIds}
               isAnyDragging={isAnyDragging}
-              onAddTask={(columnId, title) => {
-                createTask.mutate(
-                  { columnId, title },
-                  {
-                    onError: () =>
-                      setToast("Couldn't create task — please retry."),
-                  },
-                );
-              }}
+              onQuickAddError={(msg) => setToast(msg)}
             />
           ) : (
             <DndContext
@@ -537,31 +530,12 @@ export default function BoardView({ boardId }: BoardViewProps) {
                         return (
                           <Column
                             key={column.id}
+                            boardId={boardId}
                             column={column}
                             inFlightIds={inFlightIds}
                             isAnyDragging={isAnyDragging}
                             statusToken={statusToken}
-                            onAddTask={(columnId) => {
-                              // Phase 5 will wire this to a per-column
-                              // task-creation dialog. For now, open
-                              // the same first-column flow and tell
-                              // the user which column they targeted.
-                              const title = window.prompt(
-                                `Task title for "${board.columns.find((c) => c.id === columnId)?.title ?? columnId}"`,
-                              );
-                              if (title && title.trim()) {
-                                createTask.mutate(
-                                  { columnId, title: title.trim() },
-                                  {
-                                    onError: () => {
-                                      setToast(
-                                        "Couldn't create task — please retry.",
-                                      );
-                                    },
-                                  },
-                                );
-                              }
-                            }}
+                            onQuickAddError={(msg) => setToast(msg)}
                           />
                         );
                       })}
