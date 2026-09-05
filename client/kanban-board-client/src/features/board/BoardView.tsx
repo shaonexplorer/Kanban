@@ -392,9 +392,42 @@ export default function BoardView({ boardId }: BoardViewProps) {
         return;
       }
 
-      const fromIndex = sourceColumn.tasks.findIndex((t) => t.id === activeId);
-      if (sourceColumn.id === toColumnId && fromIndex === toIndex) {
+      // Determine the task's ORIGINAL column + index from the
+      // pre-drag snapshot (captured at `onDragStart`). The `live`
+      // cache has already been mutated by `onDragOver`, so reading
+      // `fromIndex` from it would compare the post-move position
+      // against the target and incorrectly report "no change" for
+      // upward drags where `onDragOver` already settled the task
+      // at the dropped position.
+      const snapshot = snapshotRef.current;
+      const originalColumn = snapshot
+        ? findColumnOfTask(snapshot, activeId)
+        : sourceColumn;
+      const originalColumnId = originalColumn?.id ?? sourceColumn.id;
+      const originalIndex = originalColumn
+        ? originalColumn.tasks.findIndex((t) => t.id === activeId)
+        : sourceColumn.tasks.findIndex((t) => t.id === activeId);
+
+      const currentIndex = sourceColumn.tasks.findIndex(
+        (t) => t.id === activeId,
+      );
+
+      // No-op: task is still in its original column at its
+      // original index, AND the target is the same position in
+      // the same column. We compare against the snapshot's
+      // original index (not `currentIndex`, which reflects the
+      // post-`onDragOver` preview) so a real upward or downward
+      // drag always triggers the API call.
+      if (
+        originalColumnId === toColumnId &&
+        originalIndex === toIndex &&
+        currentIndex === toIndex
+      ) {
         snapshotRef.current = null;
+        // Restore the pre-drag cache in case `onDragOver` previewed
+        // a no-op move that the snapshot's `onMutate` rollback
+        // path wouldn't otherwise undo.
+        if (snapshot) qc.setQueryData(boardQueryKey(boardId), snapshot);
         return;
       }
 
