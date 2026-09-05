@@ -904,6 +904,7 @@ export default function BoardView({ boardId }: BoardViewProps) {
           open={shareModalOpen}
           onClose={() => setShareModalOpen(false)}
           boardTitle={board.title}
+          boardId={boardId}
           members={board.members}
           currentUserId={userId}
           onSendInvite={({ email, role }) => {

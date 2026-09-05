@@ -19,6 +19,13 @@ export interface ShareBoardModalProps {
   open: boolean;
   onClose: () => void;
   boardTitle: string;
+  /**
+   * The board id, used to build the default share URL when the
+   * parent doesn't pass an explicit `shareUrl`. The URL is
+   * `${origin}/boards/${boardId}` so it always points at the
+   * board the modal is open for.
+   */
+  boardId: string;
   /** Members that pre-populate the collaborators list. */
   members: BoardMember[];
   /**
@@ -73,9 +80,10 @@ export interface ShareBoardModalProps {
    */
   initialLinkSharing?: boolean;
   /**
-   * Override the share URL preview (the long `https://kandor.app/...`
-   * string). Defaults to a placeholder until a real public-link
-   * token endpoint exists.
+   * Override the share URL preview. The parent (BoardView) computes
+   * this from the current `window.location.origin` and the board id
+   * so the link points at the board the user is actually looking
+   * at, rather than a hardcoded placeholder.
    */
   shareUrl?: string;
 }
@@ -110,6 +118,7 @@ export function ShareBoardModal({
   open,
   onClose,
   boardTitle,
+  boardId,
   members,
   currentUserId,
   seatCap = 10,
@@ -120,8 +129,18 @@ export function ShareBoardModal({
   onSave,
   onLinkSharingChange,
   initialLinkSharing = true,
-  shareUrl = "https://kandor.app/boards/b_9f82a17c?token=sh_29a",
+  shareUrl,
 }: ShareBoardModalProps) {
+  // Build the share URL from the current origin + the board id when
+  // the parent doesn't pass an explicit `shareUrl`. Falls back to a
+  // `/boards/<id>` path on the server (no `window`) so the rendered
+  // markup is never empty during SSR.
+  const resolvedShareUrl =
+    shareUrl ??
+    (typeof window !== "undefined"
+      ? `${window.location.origin}/boards/${boardId}`
+      : `/boards/${boardId}`);
+
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<InviteRole>(defaultInviteRole);
   const [linkSharing, setLinkSharing] = useState(initialLinkSharing);
@@ -173,7 +192,7 @@ export function ShareBoardModal({
       // shareUrl prop so the user can still select-and-copy it.
       setCopyState("copied");
     } else {
-      void navigator.clipboard.writeText(shareUrl);
+      void navigator.clipboard.writeText(resolvedShareUrl);
       setCopyState("copied");
     }
     if (copyResetTimer.current !== null) {
@@ -330,7 +349,7 @@ export function ShareBoardModal({
                   className="w-4 h-4 text-tertiary shrink-0"
                 />
                 <span className="font-label-mono-sm text-label-mono-sm text-on-surface-variant truncate">
-                  {shareUrl}
+                  {resolvedShareUrl}
                 </span>
               </div>
               <button
