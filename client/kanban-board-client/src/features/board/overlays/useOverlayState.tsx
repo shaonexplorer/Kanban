@@ -29,6 +29,11 @@ import {
  * `LaneFocusView` → `ColumnShell` → `TaskCardShell`) — without
  * having to thread an `onSelect` callback through every layer.
  *
+ * It also owns `invitationsInboxOpen: boolean` (Phase 5 Step 9a) so
+ * the `InvitationsInbox` can be opened from both the bell button
+ * in `BoardHeader` and the `<EmptyBoardsState />` card on the home
+ * page, without prop-drilling the open flag through either tree.
+ *
  * **Why a 50-line context instead of zustand (per Plan §5.4's
  * "Why a tiny context instead of zustand" note):** the
  * `specs/Techstack.md` lists `zustand` as a *planned* library;
@@ -49,6 +54,11 @@ export interface OverlayState {
    *  doesn't try to render a task from a different board. `null`
    *  when no modal is open. */
   selectedTaskBoardId: string | null;
+  /** `true` while the `InvitationsInbox` should be rendered. Opened
+   *  by the bell button in `BoardHeader` (visible on every board)
+   *  and from `<EmptyBoardsState />` on the home page when the user
+   *  has pending invitations but no boards yet. */
+  invitationsInboxOpen: boolean;
 }
 
 export interface OverlayStateValue extends OverlayState {
@@ -56,6 +66,8 @@ export interface OverlayStateValue extends OverlayState {
   closeCreateBoard: () => void;
   openTask: (boardId: string, taskId: string) => void;
   closeTask: () => void;
+  openInvitationsInbox: () => void;
+  closeInvitationsInbox: () => void;
 }
 
 const OverlayStateContext = createContext<OverlayStateValue | null>(null);
@@ -75,6 +87,7 @@ export function OverlayStateProvider({ children }: OverlayStateProviderProps) {
   const [selectedTaskBoardId, setSelectedTaskBoardId] = useState<
     string | null
   >(null);
+  const [invitationsInboxOpen, setInvitationsInboxOpen] = useState(false);
 
   const openCreateBoard = useCallback(() => setCreateBoardOpen(true), []);
   const closeCreateBoard = useCallback(() => setCreateBoardOpen(false), []);
@@ -86,25 +99,39 @@ export function OverlayStateProvider({ children }: OverlayStateProviderProps) {
     setSelectedTaskId(null);
     setSelectedTaskBoardId(null);
   }, []);
+  const openInvitationsInbox = useCallback(
+    () => setInvitationsInboxOpen(true),
+    [],
+  );
+  const closeInvitationsInbox = useCallback(
+    () => setInvitationsInboxOpen(false),
+    [],
+  );
 
   const value = useMemo<OverlayStateValue>(
     () => ({
       createBoardOpen,
       selectedTaskId,
       selectedTaskBoardId,
+      invitationsInboxOpen,
       openCreateBoard,
       closeCreateBoard,
       openTask,
       closeTask,
+      openInvitationsInbox,
+      closeInvitationsInbox,
     }),
     [
       createBoardOpen,
       selectedTaskId,
       selectedTaskBoardId,
+      invitationsInboxOpen,
       openCreateBoard,
       closeCreateBoard,
       openTask,
       closeTask,
+      openInvitationsInbox,
+      closeInvitationsInbox,
     ],
   );
 

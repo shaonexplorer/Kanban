@@ -11,6 +11,17 @@ export interface EmptyBoardsStateProps {
    *  lands in Phase 5 Step 5; until then the drawer's `onCreate`
    *  toasts "Board creation lands in Phase 5 Step 5." */
   onCreateBoard: () => void;
+  /** Phase 5 Step 9a: when the user has no boards but does have
+   *  pending board invitations, render a quiet "You have N
+   *  pending invitations" line + View button above the create
+   *  CTA. The home page passes this from the cached
+   *  `useMyInvitationsQuery` result. Optional — when omitted or
+   *  zero, the line + button are not rendered. */
+  pendingInvitationsCount?: number;
+  /** Phase 5 Step 9a: called when the user clicks the View button
+   *  next to the "N pending invitations" line. The home page
+   *  wires this to `useOverlayState().openInvitationsInbox()`. */
+  onViewInvitations?: () => void;
 }
 
 /**
@@ -26,11 +37,22 @@ export interface EmptyBoardsStateProps {
  * accounts without first having to create something. Same `signOut`
  * + `router.replace("/")` shape as the sidebar's sign-out button.
  *
+ * Phase 5 Step 9a adds a quiet "You have N pending invitations"
+ * line + View button above the create CTA when
+ * `pendingInvitationsCount > 0`. The component stays purely
+ * presentational — the count + the openInbox callback come in
+ * from the home page so the inbox opens through the same lifted
+ * `useOverlayState` flag the bell button uses.
+ *
  * This component is purely presentational — it owns no state and
  * has no `useEffect`. The home page decides *when* to show it
  * (after the boards fetch resolves with an empty array).
  */
-export function EmptyBoardsState({ onCreateBoard }: EmptyBoardsStateProps) {
+export function EmptyBoardsState({
+  onCreateBoard,
+  pendingInvitationsCount = 0,
+  onViewInvitations,
+}: EmptyBoardsStateProps) {
   const router = useRouter();
   const { signOut } = useAuth();
 
@@ -57,6 +79,27 @@ export function EmptyBoardsState({ onCreateBoard }: EmptyBoardsStateProps) {
           Boards are where your team&apos;s tasks live. Create your first
           board to get started.
         </p>
+        {pendingInvitationsCount > 0 && onViewInvitations ? (
+          <div
+            className="mt-space-lg flex flex-col items-center gap-space-xs"
+            data-testid="empty-boards-invitations"
+          >
+            <p className="font-body-sm text-body-sm text-on-surface-variant">
+              You have {pendingInvitationsCount} pending invitation
+              {pendingInvitationsCount === 1 ? "" : "s"} — accept one
+              to join a board without creating your own.
+            </p>
+            <button
+              type="button"
+              onClick={onViewInvitations}
+              data-testid="empty-boards-view-invitations"
+              className="inline-flex items-center justify-center gap-space-xs rounded-lg bg-surface-container-high hover:bg-surface-container-highest text-on-surface font-label-ui-md text-label-ui-md px-space-lg py-space-sm transition-colors"
+            >
+              <Icon name="mail" className="w-4 h-4" />
+              View invitations
+            </button>
+          </div>
+        ) : null}
         <button
           type="button"
           onClick={onCreateBoard}

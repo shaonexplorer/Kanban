@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useBoardQuery } from "../useBoardQuery";
+import { useMyInvitationsQuery } from "@/features/invitations/useMyInvitationsQuery";
+import { useOverlayState } from "../overlays/useOverlayState";
 import { Icon } from "./Icon";
 import { UserAvatar } from "./UserAvatar";
 
@@ -46,6 +48,18 @@ export function BoardHeader({
 }: BoardHeaderProps) {
   const { data: board } = useBoardQuery(boardId);
   const title = board?.title ?? "…";
+  // Phase 5 Step 9a — the bell button reads the cached invitation
+  // list length for the count badge and the lifted `useOverlayState`
+  // open flag for the click handler. The query refetches on
+  // navigation and on every accept / decline invalidate, so the
+  // badge stays accurate without any prop-drilling.
+  const { data: invitations } = useMyInvitationsQuery();
+  const { openInvitationsInbox } = useOverlayState();
+  const invitationCount = invitations?.length ?? 0;
+  // Cap the displayed count at "9+" so a 3-digit pill doesn't
+  // break the header layout once the user is invited to many
+  // boards at once.
+  const badgeText = invitationCount > 9 ? "9+" : String(invitationCount);
 
   // The header's left offset tracks the sidebar's width:
   //   - On compact / tablet (no sidebar visible by default): full width.
@@ -106,9 +120,9 @@ export function BoardHeader({
             {title}
           </span>
         </div>
-        <span className="hidden md:inline-block px-2 py-0.5 rounded bg-tertiary-container/20 text-tertiary font-label-mono-sm text-label-mono-sm uppercase tracking-wider shrink-0">
+        {/* <span className="hidden md:inline-block px-2 py-0.5 rounded bg-tertiary-container/20 text-tertiary font-label-mono-sm text-label-mono-sm uppercase tracking-wider shrink-0">
           Sprint Active
-        </span>
+        </span> */}
       </div>
 
       <div className="flex items-center gap-space-md md:gap-space-lg">
@@ -137,23 +151,41 @@ export function BoardHeader({
           <UserAvatar size="sm" presence="tertiary" />
         </div> */}
 
-        <button
+        {/* <button
           type="button"
           title="Share board (coming in Phase 5)"
           className="flex items-center gap-space-xs px-space-md py-1.5 rounded-lg bg-primary text-on-primary font-label-ui-md text-label-ui-md hover:bg-primary-fixed-dim transition-colors shadow-sm"
         >
           <Icon name="share" className="w-4 h-4" />
           <span className="hidden md:inline">Share Board</span>
-        </button>
+        </button> */}
 
         <button
           type="button"
-          aria-label="Notifications"
-          title="Notifications (coming in Phase 5)"
+          onClick={openInvitationsInbox}
+          aria-label={
+            invitationCount === 0
+              ? "Notifications"
+              : `${invitationCount} pending invitation${invitationCount === 1 ? "" : "s"}`
+          }
+          title={
+            invitationCount === 0
+              ? "No pending invitations"
+              : `${invitationCount} pending invitation${invitationCount === 1 ? "" : "s"}`
+          }
+          data-testid="invitations-bell"
           className="relative size-8 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
         >
           <Icon name="notifications" className="w-5 h-5" />
-          <span className="absolute top-1.5 right-1.5 size-2 rounded-full bg-primary" />
+          {invitationCount > 0 ? (
+            <span
+              aria-hidden
+              data-testid="invitations-bell-badge"
+              className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 flex items-center justify-center rounded-full bg-primary text-on-primary font-label-mono-sm text-label-mono-sm leading-none shadow-sm"
+            >
+              {badgeText}
+            </span>
+          ) : null}
         </button>
 
         <div className="pl-space-xs">

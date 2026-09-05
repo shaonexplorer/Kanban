@@ -1012,6 +1012,7 @@ shipped; the wiring turns them into round-tripped surfaces.
 | REQ-5.1.21–24 | Loading / error / empty states | ⬜ Pending | §5 |
 | REQ-5.1.25–40 | Wiring the Phase 5 overlays (TaskModal, ShareBoardModal, CreateBoardDrawer, lifted state) | ⬜ Pending | §6; `phase5-e2e.ps1` §B |
 | REQ-5.1.41–44 | Quick-add keyboard shortcut (`c`, `?`, stretch `b` / `m`) | ⬜ Pending | §7 |
+| REQ-5.1.45–50 | Board invitation inbox (bell + accept + decline) | ✅ Shipped (Step 9a) | §7a |
 | REQ-5.2.1–5 | Input validation audit | ⬜ Pending | §8; `phase5-e2e.ps1` §C |
 | REQ-5.2.6–12 | Structured API logging (pino + pino-http + X-Request-Id) | ⬜ Pending | §9; `phase5-e2e.ps1` §C |
 | REQ-5.2.20–24 | Rate limiting on auth (login + register) | ⬜ Pending | §10; `phase5-e2e.ps1` §A |
@@ -1346,6 +1347,50 @@ depend on.
   `CreateBoardDrawer` opens. Type `m` — confirm
   `ShareBoardModal` opens. (Skip if the stretch is
   dropped.)
+
+### Board Invitation Inbox
+
+- [ ] **(VAL-5.1.45)** Confirm the bell button badge.
+  As an invited user, the bell in `<BoardHeader />`
+  renders a count pill matching the number of PENDING
+  invitations. Sign in as a user with zero pending
+  invites; the pill is hidden.
+- [ ] **(VAL-5.1.46)** Confirm the bell opens the inbox.
+  Click the bell — the centered `<InvitationsInbox />`
+  modal opens. Each row shows the board title, the
+  inviter's email, and a relative-time string.
+- [ ] **(VAL-5.1.47)** Confirm `Accept` navigates and
+  caches. Click `Accept` on a row — the modal closes,
+  the user is navigated to `/boards/<joinedBoardId>`,
+  and on next visit the home page's boards list
+  includes the new board.
+- [ ] **(VAL-5.1.48)** Confirm the decline confirm
+  step. Click `Decline` once — the button flips to
+  "Click to confirm" for ~3s. Click again within the
+  window — the row is removed. After 3s with no second
+  click, the button reverts to "Decline".
+- [ ] **(VAL-5.1.49)** Confirm optimistic + rollback.
+  Kill the backend, click `Accept` — the row is
+  removed immediately, then restored with a
+  `"Couldn't accept invitation — please retry."` error
+  toast once the request fails. **Revert the backend
+  change before continuing.**
+- [ ] **(VAL-5.1.50)** Confirm the empty-state hint.
+  As a user with no boards but one or more pending
+  invitations, visit `/`. The empty-state card
+  renders the "You have N pending invitations" line
+  + a View button above the create CTA. Clicking
+  View opens the same inbox modal.
+- [ ] **(VAL-5.1.51)** Confirm the inbox Esc + backdrop
+  close. Open the inbox, press Esc — closes. Open
+  again, click outside the card — closes. The body
+  scroll-lock is active while the modal is open.
+- [ ] **(VAL-5.1.52)** Confirm the cache invalidation.
+  Accept an invitation; the bell badge decrements
+  without a page refresh (the
+  `["my-invitations"]` invalidate fires on settle).
+  Navigate to the new board; the new board appears
+  in the sidebar.
 
 ### Persistence
 

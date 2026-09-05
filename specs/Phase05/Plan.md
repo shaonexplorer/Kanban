@@ -926,12 +926,46 @@ the easy mistakes (import order, unused vars, missing `await`).
 | 7   | Backend input-validation audit script (Step 7)                                                             | 60 min           | ⬜ Pending      |
 | 8   | Backend structured logging (Step 8)                                                                       | 90 min           | ⬜ Pending      |
 | 9   | Backend rate limiting on auth (Step 9)                                                                    | 60 min           | ⬜ Pending      |
+| 9a  | Board invitation inbox UI (Step 9a — recipient accept/decline; backend endpoints from Phase 2)             | 90 min           | ✅ Shipped      |
 | 10  | Backend schema additions for the Phase 5 UX (Step 10)                                                      | 120 min          | ⬜ Pending      |
 | 11  | Backend `jest` suite (Step 11)                                                                             | 240 min          | ⬜ Pending      |
 | 12  | Frontend `vitest` suite (Step 12)                                                                          | 240 min          | ⬜ Pending      |
 | 13  | PowerShell Phase 5 e2e codifier (Step 13)                                                                  | 120 min          | ⬜ Pending      |
 | 14  | Deployment readiness — `.env.example`, CI workflow, Husky + lint-staged (Step 14)                         | 120 min          | ⬜ Pending      |
 |     | **Total**                                                                                                  | **~30 hours**    |                |
+
+### Step 9a — Frontend UX: Board Invitation Inbox
+
+The Phase 2 backend has shipped
+`GET /api/board-invitations`, `POST /:id/accept`, and
+`POST /:id/decline` since the original implementation, but the
+frontend never gained a recipient-side surface — a freshly-registered
+user could be invited but had no way to accept the invitation from
+the app. The `BoardHeader` already carried a placeholder
+`notifications` bell button with
+`title="Notifications (coming in Phase 5)"`, which is the natural
+home for this surface.
+
+The work follows the same mutation / cache-wiring pattern as Steps 1
++ 5: a new `features/invitations/` folder with a `useMyInvitationsQuery`
++ `useAcceptInvitationMutation` + `useDeclineInvitationMutation`
+(optimistic remove from `["my-invitations"]` cache, rollback on
+error, invalidate on settle), a new `<InvitationsInbox />` modal
+(loading / empty / loaded states, two-step decline confirm, Esc +
+backdrop close, body scroll-lock), a count-pill wired to the
+`BoardHeader` bell, and a `useOverlayState().invitationsInboxOpen`
+flag so the bell (in `<BoardHeader />`) and the home page's
+`<EmptyBoardsState />` "View invitations" button share the same
+open state without prop-drilling. The home page mount is what
+covers a user with pending invitations but no boards yet.
+
+`Accept` invalidates `["my-invitations"]` **and** `["my-boards"]`
+(the `api.ts` `myBoardsQueryKey`, not the dead-code duplicate in
+`useMyBoardsQuery.ts`) so the new board shows up in the sidebar on
+next visit. The mutation's `onSuccess` returns `{ boardId }` and
+the parent calls `router.push(\`/boards/${boardId}\`)` so the user
+lands on the new board immediately. No backend work is required
+— the three endpoints are unchanged from Phase 2.
 
 ---
 

@@ -394,6 +394,65 @@ requirements.
 
 ---
 
+## 7a. Frontend UX — Board Invitation Inbox (Step 9a)
+
+The Phase 2 backend for invitations (`GET /api/board-invitations`,
+`POST /api/board-invitations/:id/accept`,
+`POST /api/board-invitations/:id/decline`) has been complete since
+the original Phase 2 implementation but the frontend never shipped a
+recipient-side surface. Phase 5 Step 9a closes that gap.
+
+- **REQ-5.1.45** A bell-shaped button in `<BoardHeader />`
+  opens a centered `<InvitationsInbox />` modal. The bell
+  carries a count pill (capped at `9+`) when the caller has
+  one or more PENDING invitations; the pill is hidden when
+  the count is zero. The bell's `aria-label` is dynamic:
+  `"N pending invitations"` when `count > 0`, `"Notifications"`
+  otherwise.
+- **REQ-5.1.46** The `<InvitationsInbox />` lists every
+  PENDING invitation addressed to the current user, newest
+  first. Each row shows the board title, the inviter's email,
+  a relative-time string ("3 days ago"), and an Accept +
+  Decline button pair. The modal is empty-state, loading-state,
+  and error-state aware (matches the visual language of
+  `<BoardSkeleton />` and `<BoardErrorState />`).
+- **REQ-5.1.47** `Accept` dispatches
+  `useAcceptInvitationMutation` (`POST /:id/accept`). The
+  mutation optimistically removes the row from the
+  `["my-invitations"]` cache and rolls back on error. On
+  success the inbox closes and the user is navigated to
+  `/boards/<joinedBoardId>` via the parent's `onAccepted`
+  callback. The hook invalidates `["my-invitations"]` and
+  `["my-boards"]` on settle so the sidebar reflects the new
+  board on next visit.
+- **REQ-5.1.48** `Decline` uses a two-step confirm: the first
+  click flips the row's button to "Click to confirm" for 3
+  seconds (the same anti-misclick pattern as the trash
+  button on `<TaskModal />`); the second click dispatches
+  `useDeclineInvitationMutation` (`POST /:id/decline`).
+  Decline does not navigate; the row disappears and the bell
+  badge decrements on the next `["my-invitations"]` settle.
+- **REQ-5.1.49** The inbox mounts in both `<BoardView />` and
+  the home page (`app/page.tsx`) so a logged-in user with
+  pending invitations but no boards yet can accept without
+  first authoring a board. The open flag is lifted to
+  `useOverlayState().invitationsInboxOpen` (mirroring the
+  existing `createBoardOpen` / `selectedTaskId` pattern from
+  Plan §5.4) so the bell button and the home page's
+  `<EmptyBoardsState />` View button share the same flag
+  without prop-drilling.
+- **REQ-5.1.50** When the user lands on the home page's
+  empty-state with `pendingInvitationsCount > 0`, the
+  `<EmptyBoardsState />` card renders a quiet
+  "You have N pending invitations — accept one to join a
+  board without creating your own." line + a View button
+  above the create CTA. The component stays purely
+  presentational — the count + the `onViewInvitations`
+  callback are passed in as props by the home page (which
+  reads them from the cached `useMyInvitationsQuery`).
+
+---
+
 ## 8. Backend Quality — Input Validation Audit
 
 - **REQ-5.2.1** A new `server/scripts/audit-routes.mjs` walks

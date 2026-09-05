@@ -52,6 +52,7 @@ import { CreateBoardDrawer } from "./components/CreateBoardDrawer";
 import { TaskModal } from "./components/TaskModal";
 import { QuickAddTaskModal } from "./components/QuickAddTaskModal";
 import { KeyboardShortcutsHelp } from "./components/KeyboardShortcutsHelp";
+import { InvitationsInbox } from "@/features/invitations/components/InvitationsInbox";
 import { useAuth } from "@/features/auth/useAuth";
 import { readErrorStatus } from "@/lib/api";
 import { useMediaQuery } from "@/lib/useMediaQuery";
@@ -156,14 +157,24 @@ export default function BoardView({ boardId }: BoardViewProps) {
   // flag through the same context, so a logged-in user without
   // boards and a logged-in user on a board can both open the
   // drawer without prop-drilling.
+  //
+  // Phase 5 Step 9a: the same context also owns
+  // `invitationsInboxOpen` (Plan §9a) so the bell button in
+  // `<BoardHeader />` and the home page's `<EmptyBoardsState />`
+  // share the inbox open flag without prop-drilling. The
+  // `InvitationsInbox`'s accept callback also navigates to the
+  // newly-joined board, which is why the router lives here rather
+  // than inside the inbox itself.
   const overlay = useOverlayState();
   const {
     createBoardOpen,
     selectedTaskId,
     selectedTaskBoardId,
+    invitationsInboxOpen,
     closeCreateBoard,
     openTask,
     closeTask,
+    closeInvitationsInbox,
   } = overlay;
 
   // Phase 5 Step 1: sidebar visibility. On compact/tablet the
@@ -1126,6 +1137,22 @@ export default function BoardView({ boardId }: BoardViewProps) {
       <KeyboardShortcutsHelp
         open={shortcutsHelpOpen}
         onClose={() => setShortcutsHelpOpen(false)}
+      />
+
+      {/* Phase 5 Step 9a — Invitations inbox. Opened by the bell
+       * button in `<BoardHeader />`. The accept callback closes
+       * the inbox and navigates to the newly-joined board; the
+       * decline path leaves the user where they are. Errors
+       * surface through the same `toast` state the rest of the
+       * board uses. */}
+      <InvitationsInbox
+        open={invitationsInboxOpen}
+        onClose={closeInvitationsInbox}
+        onAccepted={(boardId) => {
+          closeInvitationsInbox();
+          router.push(`/boards/${boardId}`);
+        }}
+        onError={(msg) => setToast({ message: msg, variant: "error" })}
       />
     </div>
   );
