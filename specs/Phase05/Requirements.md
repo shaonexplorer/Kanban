@@ -451,6 +451,35 @@ recipient-side surface. Phase 5 Step 9a closes that gap.
   callback are passed in as props by the home page (which
   reads them from the cached `useMyInvitationsQuery`).
 
+### 6.6 Sidebar per-row board management
+
+- **REQ-5.1.51** The active board's `<BoardHeader />` carries
+  an always-visible `more_horiz` button between the invitations
+  bell and the user avatar (owner-only — `useAuth().userId ===
+  board.ownerId`; non-owners see only bell + avatar). The
+  affordance is always visible on every tier (compact / tablet
+  / desktop) because the header is always mounted. The
+  button is hidden while the title is being edited inline so
+  the dropdown doesn't collide with the input.
+- **REQ-5.1.52** The board-settings menu opens a `<div role="menu">`
+  with **Rename** and **Delete** items. **Rename** calls
+  `onStartRename` on the parent (`BoardView`); the parent flips
+  `editingTitle` to true and seeds `draftTitle` to the current
+  title. `<BoardHeader />` then renders the title as an inline
+  `<input>` (Enter / blur commit, Esc revert; max 100 chars;
+  same contract as `ColumnShell.tsx:282-297`). On commit,
+  `useUpdateBoardMutation.mutate({ patch: { title } })` fires
+  from `BoardView`. The hook's `onMutate` mirrors the new title
+  into both the `["board", id]` and the `["boards"]` caches
+  so the active board header and the Sidebar row label update
+  without a refetch. **Delete** is the two-step "Click to
+  confirm" pattern with 3s auto-disarm — the first click arms
+  the confirm (icon swaps to `warning` + label to "Click to
+  confirm"), the second click within 3s fires
+  `onDeleteBoard(boardId)`. `BoardView.handleDeleteBoard`
+  fires `useDeleteBoardMutation`; on success the row is
+  removed from the cache and the user is `router.push("/")`-ed.
+
 ---
 
 ## 8. Backend Quality — Input Validation Audit

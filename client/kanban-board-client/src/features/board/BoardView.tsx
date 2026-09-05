@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -34,6 +34,7 @@ import { useCreateBoardMutation } from "./useCreateBoardMutation";
 import { useInviteMemberMutation } from "./useInviteMemberMutation";
 import { useRemoveMemberMutation } from "./useRemoveMemberMutation";
 import { useUpdateBoardMutation } from "./useUpdateBoardMutation";
+import { useDeleteBoardMutation } from "./useDeleteBoardMutation";
 import {
   findColumnOfTask,
   moveTaskWithinBoard,
@@ -102,6 +103,7 @@ type LayoutTier = "compact" | "tablet" | "desktop";
  */
 export default function BoardView({ boardId }: BoardViewProps) {
   const qc = useQueryClient();
+  const router = useRouter();
   const { data: board, isLoading, error, refetch } = useBoardQuery(boardId);
   const snapshotRef = useRef<BoardDetail | null>(null);
   const moveTask = useMoveTaskMutation(boardId, snapshotRef);
@@ -120,6 +122,12 @@ export default function BoardView({ boardId }: BoardViewProps) {
   const inviteMember = useInviteMemberMutation(boardId);
   const removeMember = useRemoveMemberMutation(boardId);
   const updateBoardMutation = useUpdateBoardMutation(boardId);
+  // Phase 5 — fires `DELETE /api/boards/:id` from the
+  // board-settings menu in `<BoardHeader />`. The hook
+  // optimistically removes the board from the cached
+  // `["boards"]` list (the Sidebar / home page both consume
+  // that list).
+  const deleteBoardMutation = useDeleteBoardMutation();
 
   // Phase 5 Step 1: tier detection via two media queries. The
   // canonical breakpoints match Tailwind v4 defaults (sm = 640px,
@@ -156,6 +164,85 @@ export default function BoardView({ boardId }: BoardViewProps) {
       }
     | null
   >(null);
+
+  // Phase 5 — board-settings menu (Rename + Delete) lives in
+  // `<BoardHeader />`. The parent (`BoardView`) owns the form
+  // state because the input + the mutation share the same
+  // `draftTitle` value. The header's `more_horiz` →
+  // "Rename" item calls `handleStartRename`; Enter / blur calls
+  // `handleCommitRename`; Esc calls `handleCancelRename`.
+  const [renamingBoard, setRenamingBoard] = useState(false);
+  const [renameDraft, setRenameDraft] = useState<string>("");
+  const handleStartRename = useCallback(() => {
+    if (board?.title) {
+      setRenameDraft(board.title);
+      setRenamingBoard(true);
+    }
+  }, [board]);
+  const handleCancelRename = useCallback(() => {
+    setRenamingBoard(false);
+    setRenameDraft(board?.title ?? "");
+  }, [board]);
+  const handleCommitRename = useCallback(() => {
+    const next = renameDraft.trim();
+    if (!next || next === board?.title) {
+      setRenamingBoard(false);
+      setRenameDraft(board?.title ?? "");
+      return;
+    }
+    if (next.length > 100) {
+      setToast({
+        message: "Board title must be 100 characters or fewer.",
+        variant: "error",
+      });
+      return;
+    }
+    setRenamingBoard(false);
+    updateBoardMutation.mutate(
+      { patch: { title: next } },
+      {
+        onSuccess: () => {
+          setToast({
+            message: `Board renamed to "${next}".`,
+            variant: "success",
+          });
+        },
+        onError: (err) => {
+          setToast({
+            message:
+              extractMutationError(err).message ?? "Couldn't rename board.",
+            variant: "error",
+          });
+        },
+      },
+    );
+  }, [renameDraft, board, updateBoardMutation]);
+  const handleDeleteBoard = useCallback(() => {
+    if (!board) return;
+    const title = board.title;
+    deleteBoardMutation.mutate(
+      { boardId },
+      {
+        onSuccess: () => {
+          setToast({
+            message: `Board "${title}" deleted.`,
+            variant: "info",
+          });
+          // Navigate home so the user doesn't see a 404 board
+          // view for the soft-deleted board.
+          router.push("/");
+        },
+        onError: (err) => {
+          setToast({
+            message:
+              extractMutationError(err).message ??
+              "Couldn't delete board — please retry.",
+            variant: "error",
+          });
+        },
+      },
+    );
+  }, [board, boardId, deleteBoardMutation, router]);
 
   // Phase 5 Step 5: lifted overlay state (Plan §5.4) owns the
   // share modal's open flag, the create-board drawer's open flag,
@@ -671,7 +758,6 @@ export default function BoardView({ boardId }: BoardViewProps) {
   // callback identity stays stable across renders and the
   // `BoardErrorState`'s "Sign in again" button is wired the moment
   // the 401 is detected.
-  const router = useRouter();
   async function handleSignOut() {
     await signOut();
     router.replace("/");
@@ -730,6 +816,13 @@ export default function BoardView({ boardId }: BoardViewProps) {
             sidebarCollapsed={isDesktopTier ? sidebarCollapsed : false}
             onToggleSidebar={() => setSidebarOpen((v) => !v)}
             onToggleSidebarCollapse={() => setSidebarCollapsed((v) => !v)}
+            editingTitle={renamingBoard}
+            draftTitle={renameDraft}
+            onDraftTitleChange={setRenameDraft}
+            onStartRename={handleStartRename}
+            onCommitRename={handleCommitRename}
+            onCancelRename={handleCancelRename}
+            onDeleteBoard={handleDeleteBoard}
           />
           <main className="pt-16 min-h-screen flex flex-col">
             <BoardControlBar
@@ -775,6 +868,13 @@ export default function BoardView({ boardId }: BoardViewProps) {
             sidebarCollapsed={isDesktopTier ? sidebarCollapsed : false}
             onToggleSidebar={() => setSidebarOpen((v) => !v)}
             onToggleSidebarCollapse={() => setSidebarCollapsed((v) => !v)}
+            editingTitle={renamingBoard}
+            draftTitle={renameDraft}
+            onDraftTitleChange={setRenameDraft}
+            onStartRename={handleStartRename}
+            onCommitRename={handleCommitRename}
+            onCancelRename={handleCancelRename}
+            onDeleteBoard={handleDeleteBoard}
           />
           <main className="pt-16 min-h-screen flex flex-col">
             <BoardControlBar
@@ -885,6 +985,13 @@ export default function BoardView({ boardId }: BoardViewProps) {
           sidebarCollapsed={isDesktopTier ? sidebarCollapsed : false}
           onToggleSidebar={() => setSidebarOpen((v) => !v)}
           onToggleSidebarCollapse={() => setSidebarCollapsed((v) => !v)}
+          editingTitle={renamingBoard}
+          draftTitle={renameDraft}
+          onDraftTitleChange={setRenameDraft}
+          onStartRename={handleStartRename}
+          onCommitRename={handleCommitRename}
+          onCancelRename={handleCancelRename}
+          onDeleteBoard={handleDeleteBoard}
         />
 
         <main className="pt-16 min-h-screen flex flex-col">

@@ -77,7 +77,8 @@ surfaces into round-tripped ones; it does not re-author them.
 | `Icon` (Material Symbols silhouette) | `client/kanban-board-client/src/features/board/components/Icon.tsx` | One file owns every glyph used by the auth screen, the board chrome, the task modal, the share modal, and the create-board drawer. |
 | `UserAvatar` (initials, email-derived color) | `client/kanban-board-client/src/features/board/components/UserAvatar.tsx` | Used by the sidebar, the share modal, and the task modal metadata sidebar. |
 | Kinetic Grid tokens | `client/kanban-board-client/src/design/tokens.css` | Source of truth for color / spacing / radius / typography. |
-| `lib/api.ts` (axios + JWT) | `client/kanban-board-client/src/lib/api.ts` | The single fetch wrapper; the request interceptor attaches `Authorization: Bearer ...` from `localStorage.getItem("token")`. |
+| `lib/api.ts` (axios + cookie) | `client/kanban-board-client/src/lib/api.ts` | The single fetch wrapper; the httpOnly `token` cookie is attached automatically via `withCredentials: true` (Phase 5 Step 8 migration). |
+| Board-settings menu in `<BoardHeader />` | `client/kanban-board-client/src/features/board/components/BoardHeader.tsx` (state + UI) + `BoardView.tsx` (handlers) | Owner-only `more_horiz` between bell and avatar opens Rename + Delete. The form state (`renamingBoard` + `renameDraft`) and the mutation calls live in `BoardView` (parent) — `BoardHeader` is purely presentational. Rename → `useUpdateBoardMutation`; Delete → `useDeleteBoardMutation`. The `["boards"]` list cache is the single source of truth — the same query feeds the Sidebar and the home page. Always visible on every tier (compact/tablet/desktop) because the header is always mounted. |
 
 ---
 

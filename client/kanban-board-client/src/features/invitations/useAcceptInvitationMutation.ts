@@ -40,7 +40,7 @@ export interface AcceptInvitationContext {
  * — the `prisma.$transaction` wraps the upsert + status flip). So
  * once the server returns 200, the new board is visible in
  * `GET /api/boards` and the bell badge will reflect the new state
- * after the `["my-boards"]` invalidate.
+ * after the `["boards"]` invalidate.
  *
  * The mutation does NOT navigate to the new board on its own —
  * navigation is the caller's responsibility (the inbox closes
@@ -50,12 +50,11 @@ export interface AcceptInvitationContext {
  * from a future entry point.
  *
  * **Cache key note for the implementer:** `myBoardsQueryKey` is
- * imported from `features/board/api.ts` (the `["my-boards"]`
- * symbol), not from `features/board/useMyBoardsQuery.ts` (which
- * is a dead-code duplicate under the key `["boards"]`). This
- * matters: the create-board flow already invalidates
- * `["my-boards"]`, and we want accept to share the same key so
- * the new board shows up in the sidebar on next visit.
+ * imported from `features/board/api.ts` — the canonical
+ * `["boards"]` symbol that `useMyBoardsQuery` also keys on. This
+ * matters: the create-board flow invalidates the same key, and we
+ * want accept to share the same key so the new board shows up in
+ * the sidebar on next visit.
  */
 export function useAcceptInvitationMutation(): UseMutationResult<
   AcceptInvitationResult,

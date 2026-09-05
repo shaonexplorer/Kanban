@@ -1391,6 +1391,30 @@ depend on.
   `["my-invitations"]` invalidate fires on settle).
   Navigate to the new board; the new board appears
   in the sidebar.
+- [ ] **(VAL-5.1.53)** Confirm the board-header rename.
+  Open a board you own. The header's right side shows:
+  filter input (desktop) → bell → `more_horiz` → avatar.
+  Click `more_horiz`, click Rename — the title swaps
+  for an inline input. Type a new title, press Enter.
+  The header title updates immediately. The Sidebar row
+  label also updates immediately (optimistic patch in
+  `useUpdateBoardMutation.onMutate` writes both
+  `["board", id]` and `["boards"]`). The toast "Board
+  renamed to …" appears. Hard-refresh — the new title
+  persists. As a non-owner (invited member), the
+  `more_horiz` button is NOT rendered.
+- [ ] **(VAL-5.1.54)** Confirm the board-header delete.
+  Open a board you own. Click `more_horiz`, click
+  Delete — the label flips to "Click to confirm" with
+  a warning icon. Wait 4 seconds without clicking — the
+  confirm auto-disarms (label returns to "Delete", icon
+  returns to `delete`). Click Delete, then within 3s
+  click again. The toast `Board "<title>" deleted.`
+  appears and the page navigates to `/`. The board is
+  gone from the Sidebar and the home page. Hard-refresh
+  the home page — the board is gone. As a non-owner, the
+  `more_horiz` is not rendered (server would 403 anyway
+  via `requireBoardOwner`).
 
 ### Persistence
 

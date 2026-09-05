@@ -22,11 +22,12 @@ export function fetchMyBoards(): Promise<
 
 /**
  * Stable query key for the caller's boards. Used by
- * `useCreateBoardMutation` (invalidates on success so the home
- * page's `EmptyBoardsState` clears on the next visit) and the
- * future `useFetchMyBoards` hook (if/when one is added).
+ * `useCreateBoardMutation` and `useAcceptInvitationMutation`
+ * (invalidate on success so the Sidebar / `useMyBoardsQuery`
+ * refetches and the new board appears). `useMyBoardsQuery`
+ * itself keys on this same symbol so the two stay in sync.
  */
-export const myBoardsQueryKey = ["my-boards"] as const;
+export const myBoardsQueryKey = ["boards"] as const;
 
 export interface CreateBoardInput {
   title: string;
@@ -190,6 +191,17 @@ export function updateColumn(
  */
 export function deleteColumn(columnId: string): Promise<void> {
   return api.delete(`/columns/${columnId}`).then(() => undefined);
+}
+
+/**
+ * `DELETE /api/boards/:id`. Soft-deletes the board (server stamps
+ * `deletedAt = now()`); subsequent reads 404. Owner-only on the
+ * server (`requireBoardOwner`). No Undo on the client — matches
+ * `deleteColumn` (re-creating a cascade-wiped tree of columns
+ * and tasks from a snapshot is too expensive / race-prone).
+ */
+export function deleteBoard(boardId: string): Promise<void> {
+  return api.delete(`/boards/${boardId}`).then(() => undefined);
 }
 
 /**
