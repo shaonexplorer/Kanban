@@ -53,9 +53,10 @@ export interface ShareBoardModalProps {
    * back to a status-aware default; `httpStatus` is `null` for
    * transport (no-response) errors.
    */
-  onSendInvite?: (
-    args: { email: string; role: InviteRole },
-  ) => Promise<MutationError | null>;
+  onSendInvite?: (args: {
+    email: string;
+    role: InviteRole;
+  }) => Promise<MutationError | null>;
   /**
    * Click handler for a per-row "remove collaborator" press.
    * Owners (row with `role === "OWNER"`) never expose this button.
@@ -63,9 +64,7 @@ export interface ShareBoardModalProps {
    * `onSendInvite` so the modal can render an inline red ring +
    * message on the failed row.
    */
-  onRemoveMember?: (
-    args: { userId: string },
-  ) => Promise<MutationError | null>;
+  onRemoveMember?: (args: { userId: string }) => Promise<MutationError | null>;
   /**
    * Optional per-row role change. Owners are not editable so this
    * fires only for `MEMBER` rows.
@@ -351,8 +350,8 @@ export function ShareBoardModal({
               </h2>
             </div>
             <p className="font-body-md text-body-md text-on-surface-variant">
-              Invite teammates, manage access levels, and configure public
-              link sharing.
+              Invite teammates, manage access levels, and configure public link
+              sharing.
             </p>
           </div>
           <button
@@ -398,7 +397,7 @@ export function ShareBoardModal({
                   onKeyDown={(e) => {
                     if (e.key === "Enter") handleSendInvite();
                   }}
-                  placeholder="Enter email addresses or team names…"
+                  placeholder="Enter email address of a registered user"
                   aria-invalid={inviteError ? true : undefined}
                   aria-describedby={
                     inviteError ? "share-invite-error" : undefined
@@ -410,9 +409,7 @@ export function ShareBoardModal({
               <div className="relative shrink-0">
                 <select
                   value={inviteRole}
-                  onChange={(e) =>
-                    setInviteRole(e.target.value as InviteRole)
-                  }
+                  onChange={(e) => setInviteRole(e.target.value as InviteRole)}
                   aria-label="Invite role"
                   className="appearance-none bg-surface-container-high text-on-surface font-label-ui-md text-label-ui-md pl-3 pr-7 py-2 rounded-lg cursor-pointer focus:outline-none hover:bg-surface-container-highest transition-colors"
                 >
@@ -482,9 +479,7 @@ export function ShareBoardModal({
                 onClick={handleToggleLinkSharing}
                 className={[
                   "w-11 h-6 rounded-full relative p-0.5 transition-colors cursor-pointer shrink-0",
-                  linkSharing
-                    ? "bg-primary"
-                    : "bg-surface-container-highest",
+                  linkSharing ? "bg-primary" : "bg-surface-container-highest",
                 ].join(" ")}
               >
                 <div
@@ -512,11 +507,7 @@ export function ShareBoardModal({
                 onClick={handleCopyLink}
                 className="flex items-center gap-1 px-space-sm py-1.5 rounded bg-surface-container text-on-surface hover:bg-surface-bright font-label-ui-md text-label-ui-md transition-colors shadow-sm shrink-0"
               >
-                <Icon
-                  name="content_copy"
-                  className="w-4 h-4"
-                  aria-hidden
-                />
+                <Icon name="content_copy" className="w-4 h-4" aria-hidden />
                 <span>{copyState === "copied" ? "Copied!" : "Copy Link"}</span>
               </button>
               <button
@@ -571,10 +562,7 @@ export function ShareBoardModal({
                 // call without re-rendering the whole modal.
                 const rowError = removeErrors[member.userId] ?? null;
                 return (
-                  <div
-                    key={member.userId}
-                    className="flex flex-col"
-                  >
+                  <div key={member.userId} className="flex flex-col">
                     <div
                       data-testid="share-member-row"
                       data-user-id={member.userId}
@@ -625,9 +613,7 @@ export function ShareBoardModal({
                               <select
                                 aria-label="Change role"
                                 defaultValue={
-                                  member.role === "OWNER"
-                                    ? "Admin"
-                                    : "Editor"
+                                  member.role === "OWNER" ? "Admin" : "Editor"
                                 }
                                 onChange={(e) =>
                                   onChangeMemberRole?.({
@@ -650,9 +636,7 @@ export function ShareBoardModal({
                               type="button"
                               aria-label="Remove collaborator"
                               data-testid="share-member-remove"
-                              onClick={() =>
-                                handleRemoveMember(member.userId)
-                              }
+                              onClick={() => handleRemoveMember(member.userId)}
                               className="w-7 h-7 rounded text-outline hover:text-error hover:bg-error-container/30 flex items-center justify-center transition-colors"
                             >
                               <Icon name="close" className="w-4 h-4" />
@@ -687,11 +671,7 @@ export function ShareBoardModal({
         {/* ---- MODAL FOOTER ---------------------------------------- */}
         <div className="px-space-xl py-space-md bg-surface-container-low flex flex-wrap items-center justify-between gap-space-sm border-t border-outline-variant/30">
           <div className="flex items-center gap-space-xs text-outline font-label-mono-sm text-label-mono-sm">
-            <Icon
-              name="groups"
-              className="w-4 h-4 text-tertiary"
-              aria-hidden
-            />
+            <Icon name="groups" className="w-4 h-4 text-tertiary" aria-hidden />
             <span>
               Team plan:{" "}
               <strong className="text-on-surface">
