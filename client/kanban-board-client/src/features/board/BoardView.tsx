@@ -26,6 +26,8 @@ import { useMoveTaskMutation } from "./useMoveTaskMutation";
 import { useMoveColumnMutation } from "./useMoveColumnMutation";
 import { useCreateTaskMutation } from "./useCreateTaskMutation";
 import { useCreateColumnMutation } from "./useCreateColumnMutation";
+import { useUpdateColumnMutation } from "./useUpdateColumnMutation";
+import { useDeleteColumnMutation } from "./useDeleteColumnMutation";
 import { useUpdateTaskMutation } from "./useUpdateTaskMutation";
 import { useDeleteTaskMutation } from "./useDeleteTaskMutation";
 import { useCreateBoardMutation } from "./useCreateBoardMutation";
@@ -106,6 +108,8 @@ export default function BoardView({ boardId }: BoardViewProps) {
   const moveColumn = useMoveColumnMutation(boardId, snapshotRef);
   const createTask = useCreateTaskMutation(boardId);
   const createColumn = useCreateColumnMutation(boardId);
+  const updateColumn = useUpdateColumnMutation(boardId);
+  const deleteColumnMutation = useDeleteColumnMutation(boardId);
   // Phase 5 Step 5: the new mutations backing the TaskModal
   // (title autosave, star, trash) and the ShareBoardModal
   // (invite, remove, link-sharing toggle) and the
@@ -436,6 +440,94 @@ export default function BoardView({ boardId }: BoardViewProps) {
     const snap = snapshotRef.current;
     snapshotRef.current = null;
     if (snap) qc.setQueryData(boardQueryKey(boardId), snap);
+  }
+
+  // ----- column management (Phase 5 add-column-management) ---------
+  //
+  // Wired to the `more_horiz` → "Rename" / "Delete" menu inside
+  // `<ColumnShell>`. The hooks handle the optimistic cache write
+  // and the rollback; these handlers just dispatch the mutation
+  // and surface success / failure through the same `setToast`
+  // channel every other Phase 5 mutation uses. The in-flight id
+  // is added to `inFlightIds` so the column is dimmed while the
+  // mutation is in flight (matches the move-mutation pattern at
+  // line 336-340).
+  function handleRenameColumn({
+    columnId,
+    title,
+  }: {
+    columnId: string;
+    title: string;
+  }) {
+    setInFlightIds((s) => {
+      const n = new Set(s);
+      n.add(columnId);
+      return n;
+    });
+    updateColumn.mutate(
+      { columnId, patch: { title } },
+      {
+        onError: (err) => {
+          setToast({
+            message:
+              extractMutationError(err).message ??
+              "Couldn't rename column — please retry.",
+            variant: "error",
+          });
+        },
+        onSuccess: () => {
+          setToast({ message: "Column renamed.", variant: "success" });
+        },
+        onSettled: () => {
+          setInFlightIds((s) => {
+            const n = new Set(s);
+            n.delete(columnId);
+            return n;
+          });
+        },
+      },
+    );
+  }
+
+  function handleDeleteColumn(columnId: string) {
+    // Capture the title from the cache so the success toast
+    // can name the deleted column. Same pattern as the
+    // task-delete toast at line 1053-1054.
+    const live = qc.getQueryData<BoardDetail>(boardQueryKey(boardId));
+    const target = live?.columns.find((c) => c.id === columnId);
+    const title = target?.title ?? "Column";
+
+    setInFlightIds((s) => {
+      const n = new Set(s);
+      n.add(columnId);
+      return n;
+    });
+    deleteColumnMutation.mutate(
+      { columnId },
+      {
+        onError: (err) => {
+          setToast({
+            message:
+              extractMutationError(err).message ??
+              "Couldn't delete column — please retry.",
+            variant: "error",
+          });
+        },
+        onSuccess: () => {
+          setToast({
+            message: `Column "${title}" deleted.`,
+            variant: "info",
+          });
+        },
+        onSettled: () => {
+          setInFlightIds((s) => {
+            const n = new Set(s);
+            n.delete(columnId);
+            return n;
+          });
+        },
+      },
+    );
   }
 
   // ----- keyboard shortcuts (Phase 5 Step 6) -------------------------
@@ -786,6 +878,8 @@ export default function BoardView({ boardId }: BoardViewProps) {
               onSelectTask={(taskId) => openTask(boardId, taskId)}
               onCreateColumn={handleNewColumn}
               createColumnInFlight={createColumn.isPending}
+              onRenameColumn={handleRenameColumn}
+              onDeleteColumn={handleDeleteColumn}
             />
           ) : (
             <DndContext
@@ -841,6 +935,8 @@ export default function BoardView({ boardId }: BoardViewProps) {
                               setToast({ message: msg, variant: "error" })
                             }
                             onSelectTask={(taskId) => openTask(boardId, taskId)}
+                            onRenameColumn={handleRenameColumn}
+                            onDeleteColumn={handleDeleteColumn}
                           />
                         );
                       })}

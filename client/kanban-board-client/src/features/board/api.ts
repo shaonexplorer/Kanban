@@ -168,6 +168,31 @@ export function createColumn(
 }
 
 /**
+ * `PATCH /api/columns/:id` — rename a column. The wire response
+ * is `ColumnMutationResult` (id / title / boardId / position,
+ * no `tasks`); the `useUpdateColumnMutation` hook is responsible
+ * for mapping the server shape back into the cache's full
+ * `Column` (with the existing `tasks` preserved).
+ */
+export function updateColumn(
+  columnId: string,
+  body: { title: string },
+): Promise<ColumnMutationResult> {
+  return api
+    .patch<ColumnMutationResult>(`/columns/${columnId}`, body)
+    .then((r) => r.data);
+}
+
+/**
+ * `DELETE /api/columns/:id`. Cascades to the column's tasks via
+ * the schema's `onDelete: Cascade` on `Task.column`. Returns
+ * `void` to mirror `deleteTask` (line 85-87).
+ */
+export function deleteColumn(columnId: string): Promise<void> {
+  return api.delete(`/columns/${columnId}`).then(() => undefined);
+}
+
+/**
  * Re-export the `BoardMember` type for callers that want to
  * construct a synthetic optimistic member row (the
  * `useInviteMemberMutation` uses this for the "pending" placeholder).

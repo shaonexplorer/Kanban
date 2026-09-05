@@ -36,6 +36,16 @@ export interface LaneFocusViewProps {
   /** Optional error message to surface in the empty-state column
    *  form. Typically set by the parent from a toast. */
   createColumnErrorMessage?: string | null;
+  /** Phase 5 column management — forwarded to the rendered
+   *  `<Column>` so the `more_horiz` → "Rename" menu on the
+   *  active lane can dispatch `useUpdateColumnMutation.mutate`
+   *  in `BoardView`. */
+  onRenameColumn?: (args: { columnId: string; title: string }) => void;
+  /** Phase 5 column management — forwarded to the rendered
+   *  `<Column>` so the `more_horiz` → "Delete" → "Click to
+   *  confirm" flow on the active lane can dispatch
+   *  `useDeleteColumnMutation.mutate` in `BoardView`. */
+  onDeleteColumn?: (columnId: string) => void;
 }
 
 /**
@@ -68,6 +78,8 @@ export function LaneFocusView({
   onCreateColumn,
   createColumnInFlight = false,
   createColumnErrorMessage = null,
+  onRenameColumn,
+  onDeleteColumn,
 }: LaneFocusViewProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const stripRef = useRef<HTMLDivElement | null>(null);
@@ -212,6 +224,8 @@ export function LaneFocusView({
           compactMode
           onQuickAddError={onQuickAddError}
           onSelectTask={onSelectTask}
+          onRenameColumn={onRenameColumn}
+          onDeleteColumn={onDeleteColumn}
         />
       </div>
     </div>
