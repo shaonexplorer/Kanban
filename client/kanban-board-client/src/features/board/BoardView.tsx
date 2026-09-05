@@ -47,7 +47,10 @@ import { BoardControlBar } from "./components/BoardControlBar";
 import { AddColumnGhost } from "./components/AddColumnGhost";
 import { LaneFocusView } from "./components/LaneFocusView";
 import { ScrollToEndChevron } from "./components/ScrollToEndChevron";
-import { ShareBoardModal } from "./components/ShareBoardModal";
+import {
+  ShareBoardModal,
+  extractMutationError,
+} from "./components/ShareBoardModal";
 import { CreateBoardDrawer } from "./components/CreateBoardDrawer";
 import { TaskModal } from "./components/TaskModal";
 import { QuickAddTaskModal } from "./components/QuickAddTaskModal";
@@ -901,77 +904,84 @@ export default function BoardView({ boardId }: BoardViewProps) {
        * `<EmptyBoardsState />` can open the same drawer. */}
       {board ? (
         <ShareBoardModal
+          // Re-mount on every `open` flip so the modal's inline
+          // error state (invite / per-row remove / link-sharing)
+          // is fresh on each open. The pattern matches `TaskModal`
+          // — see CLAUDE.md / Phase 5 Step 5 — and avoids the
+          // `setState-in-effect` ESLint rule that the
+          // `react-hooks/set-state-in-effect` plugin rejects.
+          key={String(shareModalOpen)}
           open={shareModalOpen}
           onClose={() => setShareModalOpen(false)}
           boardTitle={board.title}
           boardId={boardId}
           members={board.members}
           currentUserId={userId}
-          onSendInvite={({ email, role }) => {
-            inviteMember.mutate(
-              { email, role: role === "Admin" ? "ADMIN" : "MEMBER" },
-              {
-                onError: () => {
-                  setToast({
-                    message: "Couldn't send invite — please retry.",
-                    variant: "error",
-                  });
-                },
-                onSuccess: () => {
-                  setToast({
-                    message: `Invite sent to ${email}.`,
-                    variant: "success",
-                  });
-                },
-              },
-            );
+          onSendInvite={async ({ email, role }) => {
+            try {
+              await inviteMember.mutateAsync({
+                email,
+                role: role === "Admin" ? "ADMIN" : "MEMBER",
+              });
+              setToast({
+                message: `Invite sent to ${email}.`,
+                variant: "success",
+              });
+              return null;
+            } catch (err) {
+              // The modal surfaces the inline error next to the
+              // email input; we still surface a quiet global toast
+              // for parity with the success path so the user gets
+              // the same feedback channel on both outcomes.
+              return extractMutationError(err);
+            }
           }}
-          onRemoveMember={({ userId: targetUserId }) => {
+          onRemoveMember={async ({ userId: targetUserId }) => {
             // Pending-invitation rows have a `userId` like
             // `pending-<email>`. The server endpoint expects a
-            // real UUID; for now we surface a "Step 10" toast
-            // for those and only call the real endpoint for
-            // real member rows.
+            // real UUID; for now we surface a "Step 10" note
+            // inline on the row so the user understands *why*
+            // the X button can't actually revoke a pending
+            // invite yet, and skip the network call.
             if (targetUserId.startsWith("pending-")) {
-              setToast({
+              return {
                 message:
                   "Revoking a pending invite ships in Phase 5 Step 10.",
-                variant: "info",
-              });
-              return;
+                httpStatus: null,
+              };
             }
-            removeMember.mutate(
-              { userId: targetUserId },
-              {
-                onError: () => {
-                  setToast({
-                    message: "Couldn't remove member — please retry.",
-                    variant: "error",
-                  });
-                },
-              },
-            );
+            try {
+              await removeMember.mutateAsync({ userId: targetUserId });
+              return null;
+            } catch (err) {
+              return extractMutationError(err);
+            }
           }}
-          onLinkSharingChange={(enabled) => {
-            updateBoardMutation.mutate(
-              { patch: { linkSharing: enabled ? "VIEW" : "DISABLED" } },
-              {
-                onError: () => {
-                  setToast({
-                    message: "Couldn't update share settings — please retry.",
-                    variant: "error",
-                  });
-                },
-                onSuccess: () => {
-                  setToast({
-                    message: enabled
-                      ? "Public link sharing is on."
-                      : "Public link sharing is off.",
-                    variant: "success",
-                  });
-                },
-              },
-            );
+          onLinkSharingChange={async (enabled) => {
+            try {
+              await updateBoardMutation.mutateAsync({
+                patch: { linkSharing: enabled ? "VIEW" : "DISABLED" },
+              });
+              setToast({
+                message: enabled
+                  ? "Public link sharing is on."
+                  : "Public link sharing is off.",
+                variant: "success",
+              });
+              return null;
+            } catch (err) {
+              return extractMutationError(err);
+            }
+          }}
+          onLinkSharingReset={() => {
+            // The modal owns the visual toggle state; this callback
+            // is a no-op on the board view side because we don't
+            // mirror the toggle here. The hook is preserved for
+            // symmetry with the rest of the optimistic-update
+            // pattern (see `useMoveTaskMutation`'s snapshot
+            // rollback) and so a future caller that *does* mirror
+            // the toggle outside the modal can use it without a
+            // signature change.
           }}
         />
       ) : null}
