@@ -60,7 +60,7 @@ function jwtExpiresInToMs(expiresIn: string | number): number {
 function setAuthCookie(res: Response, token: string): void {
   res.cookie(AUTH_COOKIE_NAME, token, {
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: "none",
     // secure: config.NODE_ENV === "production",
     secure: true,
     path: "/",
