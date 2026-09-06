@@ -114,7 +114,11 @@ export async function login(req: Request, res: Response): Promise<void> {
  * before the response body is read.
  */
 export async function logout(_req: Request, res: Response): Promise<void> {
-  res.clearCookie(AUTH_COOKIE_NAME, { path: "/" });
+  res.clearCookie(AUTH_COOKIE_NAME, {
+    path: "/",
+    sameSite: "none",
+    secure: true,
+  });
   res.status(204).send();
 }
 
