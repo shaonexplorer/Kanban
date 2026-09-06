@@ -115,15 +115,28 @@ Mini Kanban Board/
    CORS_ORIGIN=http://localhost:3000
    NODE_ENV=development
    ```
-3. Install + migrate:
+3. Set up environment variables in `client/kanban-board-client/.env.local`:
+   ```
+   NEXT_PUBLIC_API_URL=http://localhost:4000/api
+   ```
+   This points the axios client (`src/lib/api.ts`) at the backend. The
+   `withCredentials: true` flag sends the httpOnly `token` cookie on every
+   request, so cross-origin auth works without any localStorage token.
+4. Install + migrate:
    ```bash
    cd server
    npm install
    npm run prisma:migrate
    ```
-4. Start the backend: `npm run dev` (from `server/`, listens on `:4000`).
-5. Start the frontend: `npm run dev` (from
+5. Start the backend: `npm run dev` (from `server/`, listens on `:4000`).
+6. Start the frontend: `npm run dev` (from
    `client/kanban-board-client/`, listens on `:3000`).
+
+### Frontend environment variables
+
+| Variable             | Required | Default                     | Description |
+| -------------------- | -------- | --------------------------- | ----------- |
+| `NEXT_PUBLIC_API_URL`| No       | `http://localhost:4000/api` | Base URL the axios client prepends to every API call. Must include the `/api` path. `NEXT_PUBLIC_` prefix is required by Next.js to expose the value to the browser bundle. Update this for staging/production deployments. |
 
 ### Useful scripts
 
