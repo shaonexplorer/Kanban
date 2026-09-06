@@ -58,11 +58,14 @@ model Column {
   id       String @id @default(uuid())
   title    String
   boardId  String
-  // Lexicographically sortable fractional index (Phase 4). New columns
-  // append at lexoPosition.between(max, null); see
-  // server/src/common/utils/lexoPosition.ts.
-  position String @default("a0")
-  board    Board  @relation(fields: [boardId], references: [id])
+  // Float midpoint index (Phase 5 simplification). New columns append
+  // at MAX(existing.position) + 1000; reorders pick (prev + next) / 2.
+  // KNOWN LIMITATION: Float precision floor — after ~50 midpoint
+  // inserts in one gap, (prev + next) / 2 rounds to prev and the move
+  // lands on the wrong neighbor. Workaround: PATCH /reorder, which
+  // re-keys to fresh 1000-step positions.
+  position Float   @default(1000)
+  board    Board   @relation(fields: [boardId], references: [id])
   tasks    Task[]
 }
 
@@ -72,9 +75,9 @@ model Task {
   title       String
   description String?  // Optional
   columnId    String
-  // Lexicographically sortable fractional index within the column
-  // (Phase 4). See server/src/common/utils/lexoPosition.ts.
-  position    String   @default("a0")
+  // Float midpoint index within the column (Phase 5 simplification).
+  // Same precision-floor caveat as Column.position above.
+  position    Float    @default(1000)
   createdAt   DateTime @default(now())
   column      Column   @relation(fields: [columnId], references: [id], onDelete: Cascade)
 }

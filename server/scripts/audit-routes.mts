@@ -90,6 +90,14 @@ const app = createApp();
 //   - POST /api/auth/login          — has validate(loginSchema).
 //   - GET  /api/boards              — `listBoards` reads only `req.user.id`.
 //   - GET  /api/board-invitations   — `listInvitations` reads only `req.user.id`.
+//   - GET  /api/auth/me             — reads only `req.user` (set by authMiddleware
+//                                     from the httpOnly `token` cookie). No body,
+//                                     no path param, no query string. Added in
+//                                     Phase 5 Step 8 (cookie auth migration).
+//   - POST /api/auth/logout         — same: clears the `token` cookie and 204s.
+//                                     Mounted behind `requireAuth`, but takes no
+//                                     body/params/query — the cookie is the only
+//                                     input and it's verified by authMiddleware.
 //
 // If a new "list everything I own" endpoint is added that doesn't
 // accept any filter/pagination, add it here. If a future endpoint
@@ -101,6 +109,8 @@ const PUBLIC_ROUTES = new Set<string>([
   "POST /api/auth/login",
   "GET /api/boards",
   "GET /api/board-invitations",
+  "GET /api/auth/me",
+  "POST /api/auth/logout",
 ]);
 
 // ---- 4. Walk each router's stack and collect its routes ----

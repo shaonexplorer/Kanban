@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -25,12 +25,16 @@ import { useBoardQuery, boardQueryKey } from "./useBoardQuery";
 import { useMoveTaskMutation } from "./useMoveTaskMutation";
 import { useMoveColumnMutation } from "./useMoveColumnMutation";
 import { useCreateTaskMutation } from "./useCreateTaskMutation";
+import { useCreateColumnMutation } from "./useCreateColumnMutation";
+import { useUpdateColumnMutation } from "./useUpdateColumnMutation";
+import { useDeleteColumnMutation } from "./useDeleteColumnMutation";
 import { useUpdateTaskMutation } from "./useUpdateTaskMutation";
 import { useDeleteTaskMutation } from "./useDeleteTaskMutation";
 import { useCreateBoardMutation } from "./useCreateBoardMutation";
 import { useInviteMemberMutation } from "./useInviteMemberMutation";
 import { useRemoveMemberMutation } from "./useRemoveMemberMutation";
 import { useUpdateBoardMutation } from "./useUpdateBoardMutation";
+import { useDeleteBoardMutation } from "./useDeleteBoardMutation";
 import {
   findColumnOfTask,
   moveTaskWithinBoard,
@@ -46,11 +50,15 @@ import { BoardControlBar } from "./components/BoardControlBar";
 import { AddColumnGhost } from "./components/AddColumnGhost";
 import { LaneFocusView } from "./components/LaneFocusView";
 import { ScrollToEndChevron } from "./components/ScrollToEndChevron";
-import { ShareBoardModal } from "./components/ShareBoardModal";
+import {
+  ShareBoardModal,
+  extractMutationError,
+} from "./components/ShareBoardModal";
 import { CreateBoardDrawer } from "./components/CreateBoardDrawer";
 import { TaskModal } from "./components/TaskModal";
 import { QuickAddTaskModal } from "./components/QuickAddTaskModal";
 import { KeyboardShortcutsHelp } from "./components/KeyboardShortcutsHelp";
+import { InvitationsInbox } from "@/features/invitations/components/InvitationsInbox";
 import { useAuth } from "@/features/auth/useAuth";
 import { readErrorStatus } from "@/lib/api";
 import { useMediaQuery } from "@/lib/useMediaQuery";
@@ -95,11 +103,15 @@ type LayoutTier = "compact" | "tablet" | "desktop";
  */
 export default function BoardView({ boardId }: BoardViewProps) {
   const qc = useQueryClient();
+  const router = useRouter();
   const { data: board, isLoading, error, refetch } = useBoardQuery(boardId);
   const snapshotRef = useRef<BoardDetail | null>(null);
   const moveTask = useMoveTaskMutation(boardId, snapshotRef);
   const moveColumn = useMoveColumnMutation(boardId, snapshotRef);
   const createTask = useCreateTaskMutation(boardId);
+  const createColumn = useCreateColumnMutation(boardId);
+  const updateColumn = useUpdateColumnMutation(boardId);
+  const deleteColumnMutation = useDeleteColumnMutation(boardId);
   // Phase 5 Step 5: the new mutations backing the TaskModal
   // (title autosave, star, trash) and the ShareBoardModal
   // (invite, remove, link-sharing toggle) and the
@@ -110,6 +122,12 @@ export default function BoardView({ boardId }: BoardViewProps) {
   const inviteMember = useInviteMemberMutation(boardId);
   const removeMember = useRemoveMemberMutation(boardId);
   const updateBoardMutation = useUpdateBoardMutation(boardId);
+  // Phase 5 — fires `DELETE /api/boards/:id` from the
+  // board-settings menu in `<BoardHeader />`. The hook
+  // optimistically removes the board from the cached
+  // `["boards"]` list (the Sidebar / home page both consume
+  // that list).
+  const deleteBoardMutation = useDeleteBoardMutation();
 
   // Phase 5 Step 1: tier detection via two media queries. The
   // canonical breakpoints match Tailwind v4 defaults (sm = 640px,
@@ -147,6 +165,85 @@ export default function BoardView({ boardId }: BoardViewProps) {
     | null
   >(null);
 
+  // Phase 5 — board-settings menu (Rename + Delete) lives in
+  // `<BoardHeader />`. The parent (`BoardView`) owns the form
+  // state because the input + the mutation share the same
+  // `draftTitle` value. The header's `more_horiz` →
+  // "Rename" item calls `handleStartRename`; Enter / blur calls
+  // `handleCommitRename`; Esc calls `handleCancelRename`.
+  const [renamingBoard, setRenamingBoard] = useState(false);
+  const [renameDraft, setRenameDraft] = useState<string>("");
+  const handleStartRename = useCallback(() => {
+    if (board?.title) {
+      setRenameDraft(board.title);
+      setRenamingBoard(true);
+    }
+  }, [board]);
+  const handleCancelRename = useCallback(() => {
+    setRenamingBoard(false);
+    setRenameDraft(board?.title ?? "");
+  }, [board]);
+  const handleCommitRename = useCallback(() => {
+    const next = renameDraft.trim();
+    if (!next || next === board?.title) {
+      setRenamingBoard(false);
+      setRenameDraft(board?.title ?? "");
+      return;
+    }
+    if (next.length > 100) {
+      setToast({
+        message: "Board title must be 100 characters or fewer.",
+        variant: "error",
+      });
+      return;
+    }
+    setRenamingBoard(false);
+    updateBoardMutation.mutate(
+      { patch: { title: next } },
+      {
+        onSuccess: () => {
+          setToast({
+            message: `Board renamed to "${next}".`,
+            variant: "success",
+          });
+        },
+        onError: (err) => {
+          setToast({
+            message:
+              extractMutationError(err).message ?? "Couldn't rename board.",
+            variant: "error",
+          });
+        },
+      },
+    );
+  }, [renameDraft, board, updateBoardMutation]);
+  const handleDeleteBoard = useCallback(() => {
+    if (!board) return;
+    const title = board.title;
+    deleteBoardMutation.mutate(
+      { boardId },
+      {
+        onSuccess: () => {
+          setToast({
+            message: `Board "${title}" deleted.`,
+            variant: "info",
+          });
+          // Navigate home so the user doesn't see a 404 board
+          // view for the soft-deleted board.
+          router.push("/");
+        },
+        onError: (err) => {
+          setToast({
+            message:
+              extractMutationError(err).message ??
+              "Couldn't delete board — please retry.",
+            variant: "error",
+          });
+        },
+      },
+    );
+  }, [board, boardId, deleteBoardMutation, router]);
+
   // Phase 5 Step 5: lifted overlay state (Plan §5.4) owns the
   // share modal's open flag, the create-board drawer's open flag,
   // and the `TaskModal`'s selected task id. The home page's
@@ -154,14 +251,24 @@ export default function BoardView({ boardId }: BoardViewProps) {
   // flag through the same context, so a logged-in user without
   // boards and a logged-in user on a board can both open the
   // drawer without prop-drilling.
+  //
+  // Phase 5 Step 9a: the same context also owns
+  // `invitationsInboxOpen` (Plan §9a) so the bell button in
+  // `<BoardHeader />` and the home page's `<EmptyBoardsState />`
+  // share the inbox open flag without prop-drilling. The
+  // `InvitationsInbox`'s accept callback also navigates to the
+  // newly-joined board, which is why the router lives here rather
+  // than inside the inbox itself.
   const overlay = useOverlayState();
   const {
     createBoardOpen,
     selectedTaskId,
     selectedTaskBoardId,
+    invitationsInboxOpen,
     closeCreateBoard,
     openTask,
     closeTask,
+    closeInvitationsInbox,
   } = overlay;
 
   // Phase 5 Step 1: sidebar visibility. On compact/tablet the
@@ -189,7 +296,7 @@ export default function BoardView({ boardId }: BoardViewProps) {
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
 
-  const { userId, userEmail, clearToken } = useAuth();
+  const { userId, userEmail, signOut } = useAuth();
 
   // Sensors: keyboard only on desktop (compact disables the entire
   // dnd-kit context; tablet uses the pointer sensor only). The
@@ -372,9 +479,42 @@ export default function BoardView({ boardId }: BoardViewProps) {
         return;
       }
 
-      const fromIndex = sourceColumn.tasks.findIndex((t) => t.id === activeId);
-      if (sourceColumn.id === toColumnId && fromIndex === toIndex) {
+      // Determine the task's ORIGINAL column + index from the
+      // pre-drag snapshot (captured at `onDragStart`). The `live`
+      // cache has already been mutated by `onDragOver`, so reading
+      // `fromIndex` from it would compare the post-move position
+      // against the target and incorrectly report "no change" for
+      // upward drags where `onDragOver` already settled the task
+      // at the dropped position.
+      const snapshot = snapshotRef.current;
+      const originalColumn = snapshot
+        ? findColumnOfTask(snapshot, activeId)
+        : sourceColumn;
+      const originalColumnId = originalColumn?.id ?? sourceColumn.id;
+      const originalIndex = originalColumn
+        ? originalColumn.tasks.findIndex((t) => t.id === activeId)
+        : sourceColumn.tasks.findIndex((t) => t.id === activeId);
+
+      const currentIndex = sourceColumn.tasks.findIndex(
+        (t) => t.id === activeId,
+      );
+
+      // No-op: task is still in its original column at its
+      // original index, AND the target is the same position in
+      // the same column. We compare against the snapshot's
+      // original index (not `currentIndex`, which reflects the
+      // post-`onDragOver` preview) so a real upward or downward
+      // drag always triggers the API call.
+      if (
+        originalColumnId === toColumnId &&
+        originalIndex === toIndex &&
+        currentIndex === toIndex
+      ) {
         snapshotRef.current = null;
+        // Restore the pre-drag cache in case `onDragOver` previewed
+        // a no-op move that the snapshot's `onMutate` rollback
+        // path wouldn't otherwise undo.
+        if (snapshot) qc.setQueryData(boardQueryKey(boardId), snapshot);
         return;
       }
 
@@ -420,6 +560,94 @@ export default function BoardView({ boardId }: BoardViewProps) {
     const snap = snapshotRef.current;
     snapshotRef.current = null;
     if (snap) qc.setQueryData(boardQueryKey(boardId), snap);
+  }
+
+  // ----- column management (Phase 5 add-column-management) ---------
+  //
+  // Wired to the `more_horiz` → "Rename" / "Delete" menu inside
+  // `<ColumnShell>`. The hooks handle the optimistic cache write
+  // and the rollback; these handlers just dispatch the mutation
+  // and surface success / failure through the same `setToast`
+  // channel every other Phase 5 mutation uses. The in-flight id
+  // is added to `inFlightIds` so the column is dimmed while the
+  // mutation is in flight (matches the move-mutation pattern at
+  // line 336-340).
+  function handleRenameColumn({
+    columnId,
+    title,
+  }: {
+    columnId: string;
+    title: string;
+  }) {
+    setInFlightIds((s) => {
+      const n = new Set(s);
+      n.add(columnId);
+      return n;
+    });
+    updateColumn.mutate(
+      { columnId, patch: { title } },
+      {
+        onError: (err) => {
+          setToast({
+            message:
+              extractMutationError(err).message ??
+              "Couldn't rename column — please retry.",
+            variant: "error",
+          });
+        },
+        onSuccess: () => {
+          setToast({ message: "Column renamed.", variant: "success" });
+        },
+        onSettled: () => {
+          setInFlightIds((s) => {
+            const n = new Set(s);
+            n.delete(columnId);
+            return n;
+          });
+        },
+      },
+    );
+  }
+
+  function handleDeleteColumn(columnId: string) {
+    // Capture the title from the cache so the success toast
+    // can name the deleted column. Same pattern as the
+    // task-delete toast at line 1053-1054.
+    const live = qc.getQueryData<BoardDetail>(boardQueryKey(boardId));
+    const target = live?.columns.find((c) => c.id === columnId);
+    const title = target?.title ?? "Column";
+
+    setInFlightIds((s) => {
+      const n = new Set(s);
+      n.add(columnId);
+      return n;
+    });
+    deleteColumnMutation.mutate(
+      { columnId },
+      {
+        onError: (err) => {
+          setToast({
+            message:
+              extractMutationError(err).message ??
+              "Couldn't delete column — please retry.",
+            variant: "error",
+          });
+        },
+        onSuccess: () => {
+          setToast({
+            message: `Column "${title}" deleted.`,
+            variant: "info",
+          });
+        },
+        onSettled: () => {
+          setInFlightIds((s) => {
+            const n = new Set(s);
+            n.delete(columnId);
+            return n;
+          });
+        },
+      },
+    );
   }
 
   // ----- keyboard shortcuts (Phase 5 Step 6) -------------------------
@@ -524,14 +752,14 @@ export default function BoardView({ boardId }: BoardViewProps) {
   const errorReason = useBoardErrorReason(error);
 
   // Sign-out handler for the `auth` error branch. The board view
-  // owns the router; `clearToken` lives on `AuthContext`. The
+  // owns the router; `signOut` lives on `AuthContext` and clears
+  // the httpOnly `token` cookie via `POST /api/auth/logout`. The
   // handler is created unconditionally (no hook inside) so the
   // callback identity stays stable across renders and the
   // `BoardErrorState`'s "Sign in again" button is wired the moment
   // the 401 is detected.
-  const router = useRouter();
-  function handleSignOut() {
-    clearToken();
+  async function handleSignOut() {
+    await signOut();
     router.replace("/");
   }
 
@@ -588,6 +816,13 @@ export default function BoardView({ boardId }: BoardViewProps) {
             sidebarCollapsed={isDesktopTier ? sidebarCollapsed : false}
             onToggleSidebar={() => setSidebarOpen((v) => !v)}
             onToggleSidebarCollapse={() => setSidebarCollapsed((v) => !v)}
+            editingTitle={renamingBoard}
+            draftTitle={renameDraft}
+            onDraftTitleChange={setRenameDraft}
+            onStartRename={handleStartRename}
+            onCommitRename={handleCommitRename}
+            onCancelRename={handleCancelRename}
+            onDeleteBoard={handleDeleteBoard}
           />
           <main className="pt-16 min-h-screen flex flex-col">
             <BoardControlBar
@@ -633,6 +868,13 @@ export default function BoardView({ boardId }: BoardViewProps) {
             sidebarCollapsed={isDesktopTier ? sidebarCollapsed : false}
             onToggleSidebar={() => setSidebarOpen((v) => !v)}
             onToggleSidebarCollapse={() => setSidebarCollapsed((v) => !v)}
+            editingTitle={renamingBoard}
+            draftTitle={renameDraft}
+            onDraftTitleChange={setRenameDraft}
+            onStartRename={handleStartRename}
+            onCommitRename={handleCommitRename}
+            onCancelRename={handleCancelRename}
+            onDeleteBoard={handleDeleteBoard}
           />
           <main className="pt-16 min-h-screen flex flex-col">
             <BoardControlBar
@@ -688,6 +930,24 @@ export default function BoardView({ boardId }: BoardViewProps) {
     );
   }
 
+  // Add a new column. Called by the desktop/tablet `AddColumnGhost`
+  // and by the compact tier's empty-state ghost. The mutation
+  // optimistically appends a placeholder column; on success the
+  // cache is swapped for the server-authoritative row.
+  function handleNewColumn({ title }: { title: string }) {
+    createColumn.mutate(
+      { title },
+      {
+        onError: () => {
+          setToast({
+            message: "Couldn't create column — please retry.",
+            variant: "error",
+          });
+        },
+      },
+    );
+  }
+
   // The kanban area's left padding tracks the visible sidebar:
   //   - On compact / tablet: no padding (the sidebar is a drawer).
   //   - On desktop expanded: pl-sidebar-expanded.
@@ -725,6 +985,13 @@ export default function BoardView({ boardId }: BoardViewProps) {
           sidebarCollapsed={isDesktopTier ? sidebarCollapsed : false}
           onToggleSidebar={() => setSidebarOpen((v) => !v)}
           onToggleSidebarCollapse={() => setSidebarCollapsed((v) => !v)}
+          editingTitle={renamingBoard}
+          draftTitle={renameDraft}
+          onDraftTitleChange={setRenameDraft}
+          onStartRename={handleStartRename}
+          onCommitRename={handleCommitRename}
+          onCancelRename={handleCancelRename}
+          onDeleteBoard={handleDeleteBoard}
         />
 
         <main className="pt-16 min-h-screen flex flex-col">
@@ -749,6 +1016,10 @@ export default function BoardView({ boardId }: BoardViewProps) {
                 setToast({ message: msg, variant: "error" })
               }
               onSelectTask={(taskId) => openTask(boardId, taskId)}
+              onCreateColumn={handleNewColumn}
+              createColumnInFlight={createColumn.isPending}
+              onRenameColumn={handleRenameColumn}
+              onDeleteColumn={handleDeleteColumn}
             />
           ) : (
             <DndContext
@@ -765,17 +1036,18 @@ export default function BoardView({ boardId }: BoardViewProps) {
               >
                 <div className="flex items-start gap-gutter-board min-w-max pb-space-3xl">
                   {board.columns.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-outline/30 px-space-xl py-space-3xl text-center">
-                      <p className="font-headline-sm text-headline-sm text-on-surface-variant">
+                    <div className="flex flex-col items-center gap-space-lg">
+                      <p className="font-headline-sm text-headline-sm text-on-surface-variant text-center">
                         No columns yet
                       </p>
-                      <p className="mt-space-xs font-body-md text-body-md text-outline">
-                        Create one via
-                        <code className="mx-1 px-1 py-0.5 rounded bg-surface-container-high text-on-surface font-label-mono-md text-label-mono-md">
-                          POST /api/boards/:id/columns
-                        </code>
-                        .
+                      <p className="font-body-md text-body-md text-outline text-center max-w-sm">
+                        Use the tile below to add your first column. Each
+                        column becomes a workflow status on this board.
                       </p>
+                      <AddColumnGhost
+                        onCreate={handleNewColumn}
+                        inFlight={createColumn.isPending}
+                      />
                       <Link
                         href="/"
                         className="mt-space-md inline-block font-label-ui-sm text-label-ui-sm text-primary hover:text-primary-fixed underline underline-offset-4"
@@ -803,6 +1075,8 @@ export default function BoardView({ boardId }: BoardViewProps) {
                               setToast({ message: msg, variant: "error" })
                             }
                             onSelectTask={(taskId) => openTask(boardId, taskId)}
+                            onRenameColumn={handleRenameColumn}
+                            onDeleteColumn={handleDeleteColumn}
                           />
                         );
                       })}
@@ -811,12 +1085,8 @@ export default function BoardView({ boardId }: BoardViewProps) {
 
                   {board.columns.length > 0 ? (
                     <AddColumnGhost
-                      onClick={() =>
-                        setToast({
-                          message: "Add column flow lands in Phase 5.",
-                          variant: "info",
-                        })
-                      }
+                      onCreate={handleNewColumn}
+                      inFlight={createColumn.isPending}
                     />
                   ) : null}
                 </div>
@@ -870,76 +1140,84 @@ export default function BoardView({ boardId }: BoardViewProps) {
        * `<EmptyBoardsState />` can open the same drawer. */}
       {board ? (
         <ShareBoardModal
+          // Re-mount on every `open` flip so the modal's inline
+          // error state (invite / per-row remove / link-sharing)
+          // is fresh on each open. The pattern matches `TaskModal`
+          // — see CLAUDE.md / Phase 5 Step 5 — and avoids the
+          // `setState-in-effect` ESLint rule that the
+          // `react-hooks/set-state-in-effect` plugin rejects.
+          key={String(shareModalOpen)}
           open={shareModalOpen}
           onClose={() => setShareModalOpen(false)}
           boardTitle={board.title}
+          boardId={boardId}
           members={board.members}
           currentUserId={userId}
-          onSendInvite={({ email, role }) => {
-            inviteMember.mutate(
-              { email, role: role === "Admin" ? "ADMIN" : "MEMBER" },
-              {
-                onError: () => {
-                  setToast({
-                    message: "Couldn't send invite — please retry.",
-                    variant: "error",
-                  });
-                },
-                onSuccess: () => {
-                  setToast({
-                    message: `Invite sent to ${email}.`,
-                    variant: "success",
-                  });
-                },
-              },
-            );
+          onSendInvite={async ({ email, role }) => {
+            try {
+              await inviteMember.mutateAsync({
+                email,
+                role: role === "Admin" ? "ADMIN" : "MEMBER",
+              });
+              setToast({
+                message: `Invite sent to ${email}.`,
+                variant: "success",
+              });
+              return null;
+            } catch (err) {
+              // The modal surfaces the inline error next to the
+              // email input; we still surface a quiet global toast
+              // for parity with the success path so the user gets
+              // the same feedback channel on both outcomes.
+              return extractMutationError(err);
+            }
           }}
-          onRemoveMember={({ userId: targetUserId }) => {
+          onRemoveMember={async ({ userId: targetUserId }) => {
             // Pending-invitation rows have a `userId` like
             // `pending-<email>`. The server endpoint expects a
-            // real UUID; for now we surface a "Step 10" toast
-            // for those and only call the real endpoint for
-            // real member rows.
+            // real UUID; for now we surface a "Step 10" note
+            // inline on the row so the user understands *why*
+            // the X button can't actually revoke a pending
+            // invite yet, and skip the network call.
             if (targetUserId.startsWith("pending-")) {
-              setToast({
+              return {
                 message:
                   "Revoking a pending invite ships in Phase 5 Step 10.",
-                variant: "info",
-              });
-              return;
+                httpStatus: null,
+              };
             }
-            removeMember.mutate(
-              { userId: targetUserId },
-              {
-                onError: () => {
-                  setToast({
-                    message: "Couldn't remove member — please retry.",
-                    variant: "error",
-                  });
-                },
-              },
-            );
+            try {
+              await removeMember.mutateAsync({ userId: targetUserId });
+              return null;
+            } catch (err) {
+              return extractMutationError(err);
+            }
           }}
-          onLinkSharingChange={(enabled) => {
-            updateBoardMutation.mutate(
-              { patch: { linkSharing: enabled ? "VIEW" : "DISABLED" } },
-              {
-                onError: () => {
-                  setToast({
-                    message: "Couldn't update share settings — please retry.",
-                    variant: "error",
-                  });
-                },
-                onSuccess: () => {
-                  setToast({
-                    message: enabled
-                      ? "Public link sharing is on."
-                      : "Public link sharing is off.",
-                    variant: "success",
-                  });
-                },
-              },
-            );
+          onLinkSharingChange={async (enabled) => {
+            try {
+              await updateBoardMutation.mutateAsync({
+                patch: { linkSharing: enabled ? "VIEW" : "DISABLED" },
+              });
+              setToast({
+                message: enabled
+                  ? "Public link sharing is on."
+                  : "Public link sharing is off.",
+                variant: "success",
+              });
+              return null;
+            } catch (err) {
+              return extractMutationError(err);
+            }
+          }}
+          onLinkSharingReset={() => {
+            // The modal owns the visual toggle state; this callback
+            // is a no-op on the board view side because we don't
+            // mirror the toggle here. The hook is preserved for
+            // symmetry with the rest of the optimistic-update
+            // pattern (see `useMoveTaskMutation`'s snapshot
+            // rollback) and so a future caller that *does* mirror
+            // the toggle outside the modal can use it without a
+            // signature change.
           }}
         />
       ) : null}
@@ -1107,6 +1385,22 @@ export default function BoardView({ boardId }: BoardViewProps) {
         open={shortcutsHelpOpen}
         onClose={() => setShortcutsHelpOpen(false)}
       />
+
+      {/* Phase 5 Step 9a — Invitations inbox. Opened by the bell
+       * button in `<BoardHeader />`. The accept callback closes
+       * the inbox and navigates to the newly-joined board; the
+       * decline path leaves the user where they are. Errors
+       * surface through the same `toast` state the rest of the
+       * board uses. */}
+      <InvitationsInbox
+        open={invitationsInboxOpen}
+        onClose={closeInvitationsInbox}
+        onAccepted={(boardId) => {
+          closeInvitationsInbox();
+          router.push(`/boards/${boardId}`);
+        }}
+        onError={(msg) => setToast({ message: msg, variant: "error" })}
+      />
     </div>
   );
 }
@@ -1187,7 +1481,8 @@ function renderTaskModal(args: {
  * Downcast a `useBoardQuery` error to a `BoardErrorReason`.
  *
  *   - 401 → `auth` (session expired; the error state routes the
- *     user to `/` via `clearToken`).
+ *     user to `/` via `signOut`, which clears the httpOnly
+ *     `token` cookie server-side).
  *   - 403 → `forbidden` (no access; the error state links home).
  *   - 404 → `not_found` (deleted board; the error state links home).
  *   - any other HTTP status, or a transport / unknown error →

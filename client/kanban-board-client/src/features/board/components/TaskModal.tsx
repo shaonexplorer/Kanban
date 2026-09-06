@@ -206,6 +206,15 @@ export function TaskModal(props: TaskModalProps) {
   // the prop is absent, we fall back to the local `title` state
   // initialized from the `initialTitle` prop.
   const [title, setTitle] = useState(task?.title ?? initialTitle);
+  // Phase 5 (this pass): description editor in the Raw tab. Mirrors
+  // the title flow — initialized from the `description` prop, resynced
+  // from the `task?.description` prop on cache updates (so a server
+  // edit from another tab lands), and debounced 600ms before the
+  // PATCH fires. The `useEffect` below is the analog of the title
+  // debounce; the cache write happens in `useUpdateTaskMutation`.
+  const [descriptionDraft, setDescriptionDraft] = useState(
+    task?.description ?? description,
+  );
   // `subtasks` and `comments` remain local state because the
   // backing endpoints (`POST /api/tasks/:id/subtasks` and
   // `POST /api/tasks/:id/comments`) ship in Step 10. The
@@ -242,6 +251,13 @@ export function TaskModal(props: TaskModalProps) {
   // restarts the timer on every title change.
   const titleSaveTimerRef = useRef<number | null>(null);
   const lastSavedTitleRef = useRef<string>(task?.title ?? initialTitle);
+  // Phase 5 (this pass): same debounced-save pattern for the
+  // description editor. The two refs let the effect (below) skip
+  // the PATCH when the draft hasn't moved since the last save.
+  const descSaveTimerRef = useRef<number | null>(null);
+  const lastSavedDescriptionRef = useRef<string | null>(
+    task?.description ?? description,
+  );
 
   // ---- Side effects (close, key handlers, timeouts) --------------
 
@@ -320,6 +336,52 @@ export function TaskModal(props: TaskModalProps) {
     };
   }, [title, task, onUpdateTask]);
 
+  // Debounced description save — mirrors the title flow above. The
+  // Raw tab's `<textarea>` is bound to `descriptionDraft`; this
+  // effect restarts a 600ms timer on every change and PATCHes the
+  // trimmed value when it fires. The two flows share the same
+  // `saveState` so the autosave footer ("Saving…" / "Saved" /
+  // "Failed to save") reflects whichever field is currently dirty.
+  //
+  // `descriptionDraft` may legitimately be the empty string
+  // (clearing the description is a valid mutation — the server's
+  // `UpdateTaskSchema` allows the empty string). We compare to
+  // `lastSavedDescriptionRef.current` (which can be `null` from the
+  // initial fetch) to decide whether a save is needed, treating
+  // `null` and `""` as different "last saved" values so a fresh
+  // task whose description is `null` doesn't get an empty-string
+  // PATCH on first mount.
+  useEffect(() => {
+    if (!task || !onUpdateTask) return;
+    const lastSaved = lastSavedDescriptionRef.current ?? "";
+    if (descriptionDraft === lastSaved) return;
+    if (descSaveTimerRef.current !== null) {
+      window.clearTimeout(descSaveTimerRef.current);
+    }
+    descSaveTimerRef.current = window.setTimeout(() => {
+      const lastSavedAtFire = lastSavedDescriptionRef.current ?? "";
+      if (descriptionDraft === lastSavedAtFire) return;
+      setSaveState("saving");
+      try {
+        onUpdateTask({
+          taskId: task.id,
+          columnId: task.columnId,
+          patch: { description: descriptionDraft },
+        });
+        lastSavedDescriptionRef.current = descriptionDraft;
+        setSaveState("saved");
+      } catch {
+        setSaveState("failed");
+      }
+    }, 600);
+    return () => {
+      if (descSaveTimerRef.current !== null) {
+        window.clearTimeout(descSaveTimerRef.current);
+        descSaveTimerRef.current = null;
+      }
+    };
+  }, [descriptionDraft, task, onUpdateTask]);
+
   if (!open) return null;
 
   // ---- Handlers --------------------------------------------------
@@ -341,19 +403,18 @@ export function TaskModal(props: TaskModalProps) {
   }
 
   function handleStar() {
-    const next = !starred;
-    setStarred(next);
-    if (task && onUpdateTask) {
-      // The server doesn't yet persist `starred` (Step 10
-      // widens the Task model), so this fires a no-op PATCH
-      // optimistically. The mutation will succeed and the
-      // icon will stay filled until the next refetch.
-      onUpdateTask({
-        taskId: task.id,
-        columnId: task.columnId,
-        patch: { title: task.title }, // no-op body; preserves existing title
-      });
-    }
+    // Local-state-only: the server's `UpdateTaskSchema` doesn't
+    // yet accept `starred` (Phase 5 Step 10 widens the Task
+    // model — see `specs/Phase05/Plan.md` §10.1). The previous
+    // implementation fired a PATCH with `{ title: task.title }`
+    // as a no-op body, which was misleading: it looked like the
+    // star was persisting, but the next refetch would silently
+    // revert the fill. The honest pattern is to keep the toggle
+    // purely client-side until the server can persist it; a
+    // Step 10 follow-up will replace this `setStarred` with a
+    // real `onUpdateTask({ patch: { starred: next } })` call
+    // and lift the state into the cache.
+    setStarred((s) => !s);
   }
 
   function handleDelete() {
@@ -608,7 +669,7 @@ export function TaskModal(props: TaskModalProps) {
               {previewMode === "preview" ? (
                 <div className="bg-surface-container-low rounded-xl p-space-md space-y-space-sm">
                   <p className="font-body-md text-body-md text-on-surface-variant leading-relaxed">
-                    {description.split(/(`[^`]+`)/g).map((part, i) => {
+                    {descriptionDraft.split(/(`[^`]+`)/g).map((part, i) => {
                       if (part.startsWith("`") && part.endsWith("`")) {
                         return (
                           <span
@@ -634,9 +695,20 @@ export function TaskModal(props: TaskModalProps) {
                   ) : null}
                 </div>
               ) : (
-                <pre className="bg-surface-container-low rounded-xl p-space-md font-label-mono-sm text-label-mono-sm text-on-surface-variant whitespace-pre-wrap">
-                  {description}
-                </pre>
+                // Raw tab — the description editor. The textarea is
+                // bound to `descriptionDraft`; the 600ms debounce
+                // effect above flushes the change to the server via
+                // `onUpdateTask({ patch: { description } })`. The
+                // focus styling matches the title input so the
+                // affordance feels like a single editing surface.
+                <textarea
+                  value={descriptionDraft}
+                  onChange={(e) => setDescriptionDraft(e.target.value)}
+                  rows={6}
+                  placeholder="Add a description…"
+                  aria-label="Task description"
+                  className="w-full bg-surface-container-low rounded-xl p-space-md font-body-md text-body-md text-on-surface placeholder:text-outline focus:outline-none focus:bg-surface-container-high transition-colors resize-y"
+                />
               )}
             </section>
 

@@ -59,7 +59,10 @@ export function useCreateTaskMutation(
           id: optimisticId,
           title,
           description: null,
-          position: "a0",
+          // 0 sorts before any real server-assigned position (1000+),
+          // so the placeholder appears at the start of the column
+          // until the server's `onSuccess` swap replaces it.
+          position: 0,
           columnId,
           createdAt: new Date().toISOString(),
         };

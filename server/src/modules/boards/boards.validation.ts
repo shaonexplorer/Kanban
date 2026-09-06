@@ -118,16 +118,26 @@ export const MemberParamsSchema = z.object({
 export type MemberParams = z.infer<typeof MemberParamsSchema>;
 
 /**
+ * Phase 5 Step 5: optional `role` (defaults to "MEMBER" server-side
+ * when omitted). Widened to match the client, which always sends
+ * `role: "MEMBER" | "ADMIN"` from the `ShareBoardModal`'s
+ * Admin/Editor/Viewer select (Editor/Viewer both map to MEMBER).
+ */
+const inviteRoleSchema = z.enum(["MEMBER", "ADMIN"]).optional();
+
+/**
  * Body for `POST /api/boards/:id/members`.
  *
  * Discriminated union: exactly one of `userId` (UUID of an existing user)
  * or `email` (well-formed email of an existing user) must be provided.
- * `.strict()` rejects any additional fields.
+ * Optional `role` (Phase 5 Step 5) is accepted on both union branches
+ * so the client can ship its Admin/Editor/Viewer select unchanged.
+ * `.strict()` rejects any *other* additional fields.
  */
 export const InviteMemberSchema = z
   .union([
-    z.object({ userId: z.string().uuid() }).strict(),
-    z.object({ email: z.string().email() }).strict(),
+    z.object({ userId: z.string().uuid(), role: inviteRoleSchema }).strict(),
+    z.object({ email: z.string().email(), role: inviteRoleSchema }).strict(),
   ])
   // Reject bodies with NEITHER key — only one of the union members carries
   // a value, so any key in the other member must be undefined. Without this

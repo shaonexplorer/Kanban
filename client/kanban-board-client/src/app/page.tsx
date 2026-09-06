@@ -10,6 +10,10 @@ import { EmptyBoardsState } from "@/features/board/components/EmptyBoardsState";
 import { CreateBoardDrawer } from "@/features/board/components/CreateBoardDrawer";
 import { Toast } from "@/features/board/components/Toast";
 import { useOverlayState } from "@/features/board/overlays/useOverlayState";
+import {
+  useMyInvitationsQuery,
+  InvitationsInbox,
+} from "@/features/invitations";
 
 /**
  * Landing page (Phase 5).
@@ -34,10 +38,24 @@ import { useOverlayState } from "@/features/board/overlays/useOverlayState";
  */
 export default function Home() {
   const router = useRouter();
-  const { token } = useAuth();
-  const { createBoardOpen, closeCreateBoard, openCreateBoard } =
-    useOverlayState();
+  const { isAuthenticated } = useAuth();
+  // Phase 5 Step 9a: pull the new inbox flags out of the lifted
+  // overlay context so the same bell-mounted inbox the user sees
+  // from a board is also accessible from the home page. The home
+  // page also reads the invitation count so it can nudge the user
+  // via `<EmptyBoardsState />` when they have pending invites but
+  // no boards yet.
+  const {
+    createBoardOpen,
+    closeCreateBoard,
+    openCreateBoard,
+    invitationsInboxOpen,
+    openInvitationsInbox,
+    closeInvitationsInbox,
+  } = useOverlayState();
   const createBoard = useCreateBoardMutation();
+  const { data: invitations } = useMyInvitationsQuery();
+  const pendingInvitationsCount = invitations?.length ?? 0;
   const [boardsState, setBoardsState] = useState<
     | { kind: "loading" }
     | { kind: "empty" }
@@ -48,7 +66,7 @@ export default function Home() {
   >(null);
 
   useEffect(() => {
-    if (!token) return;
+    if (!isAuthenticated) return;
     let cancelled = false;
     (async () => {
       try {
@@ -70,9 +88,9 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [token, router]);
+  }, [isAuthenticated, router]);
 
-  if (!token) {
+  if (!isAuthenticated) {
     return <AuthScreen />;
   }
 
@@ -96,6 +114,8 @@ export default function Home() {
         {boardsState.kind === "empty" ? (
           <EmptyBoardsState
             onCreateBoard={() => openCreateBoard()}
+            pendingInvitationsCount={pendingInvitationsCount}
+            onViewInvitations={() => openInvitationsInbox()}
           />
         ) : null}
 
@@ -174,6 +194,24 @@ export default function Home() {
           onDismiss={() => setToast(null)}
         />
       ) : null}
+
+      {/* Phase 5 Step 9a — Invitations inbox. Same component the
+       * board view mounts (so the visual + mutation hooks are
+       * shared). The home page wires `onAccepted` to navigate to
+       * the new board the same way the `CreateBoardDrawer` does
+       * on success. The home page is the only entry point that
+       * covers a logged-in user with pending invitations but no
+       * boards yet (a freshly-registered user invited by their
+       * team before they had a chance to author a board). */}
+      <InvitationsInbox
+        open={invitationsInboxOpen}
+        onClose={closeInvitationsInbox}
+        onAccepted={(boardId) => {
+          closeInvitationsInbox();
+          router.push(`/boards/${boardId}`);
+        }}
+        onError={(msg) => setToast({ message: msg, variant: "error" })}
+      />
     </div>
   );
 }

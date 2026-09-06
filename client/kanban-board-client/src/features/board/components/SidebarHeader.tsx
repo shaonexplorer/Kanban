@@ -46,7 +46,7 @@ export function SidebarHeader({ collapsed = false }: SidebarHeaderProps = {}) {
           </div>
         )}
       </div>
-      {collapsed ? null : (
+      {/* {collapsed ? null : (
         <button
           type="button"
           aria-label="Collapse sidebar"
@@ -54,7 +54,7 @@ export function SidebarHeader({ collapsed = false }: SidebarHeaderProps = {}) {
         >
           <Icon name="dock_to_left" className="w-5 h-5" />
         </button>
-      )}
+      )} */}
     </div>
   );
 }

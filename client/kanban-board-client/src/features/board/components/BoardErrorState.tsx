@@ -34,7 +34,9 @@ export interface BoardErrorStateProps {
   onRetry?: () => void;
   /** Called when the user clicks the "Sign in again" button
    *  (rendered on the `auth` branch). The board view wires this
-   *  to `useAuth().clearToken() + router.replace("/")`. */
+   *  to `useAuth().signOut() + router.replace("/")` so the
+   *  httpOnly `token` cookie is cleared server-side via
+   *  `POST /api/auth/logout` before the navigation. */
   onSignOut?: () => void;
 }
 

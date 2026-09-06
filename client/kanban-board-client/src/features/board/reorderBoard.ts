@@ -7,7 +7,7 @@ import type { BoardDetail, Column, Task } from "./types";
  * cache and the React tree should converge on the same shape.
  *
  * All helpers are immutable: they return a new `BoardDetail` rather
- * than mutating the input. The server's `position` strings are kept
+ * than mutating the input. The server's `position` numbers are kept
  * unchanged during a drag (the server is the only writer of positions)
  * — the client only reorders the arrays.
  */

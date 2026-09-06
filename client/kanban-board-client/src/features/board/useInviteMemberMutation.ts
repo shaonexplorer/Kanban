@@ -128,6 +128,7 @@ export function useInviteMemberMutation(
     },
 
     onError: (_err, _vars, ctx) => {
+      // console.log("invite member error", _err, ctx);
       // Prefer the snapshot — it covers the case where the user
       // invited several people in a row.
       if (ctx?.previous) {

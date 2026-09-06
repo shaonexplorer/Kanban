@@ -1,6 +1,6 @@
 import { HttpError } from "../../common/errors/HttpError.js";
 import { prisma } from "../../lib/prisma.js";
-import { between, rePackKey } from "../../common/utils/lexoPosition.js";
+import { between, nextAppend } from "../../common/utils/floatPosition.js";
 import type {
   CreateTaskInput,
   MoveTaskInput,
@@ -19,14 +19,12 @@ import type {
  * access. The service still re-checks defensively so it stays
  * self-contained and tolerant of call paths that bypass the middleware.
  *
- * Phase 4 (Step 3) introduces the `moveTask` operation: cross-column
- * moves AND same-column reorders flow through the same endpoint. The
- * `position` column is now a lexo string (per Phase 4 Step 1), and the
- * helper `lexoPosition` (`src/common/utils/lexoPosition.ts`) is the
- * **only** place on the server that produces or consumes these strings.
- * A `null` return from `lexoPosition.between` triggers a column-local
- * re-pack (assigning fresh positions in row order) inside the same
- * transaction.
+ * Phase 5 (Float ordering): `position` is now a `Float` (was a
+ * lexicographic string in Phase 4). New tasks append at
+ * `MAX(existing.position) + 1000`; reorders + cross-column moves pick
+ * a position from the four midpoint cases exposed by
+ * `floatPosition.between`. See `src/common/utils/floatPosition.ts` for
+ * the precision-floor caveat.
  */
 
 // ---------------------------------------------------------------------------
@@ -36,14 +34,14 @@ import type {
 
 /**
  * The full task shape returned by every read / mutation endpoint.
- * `position` is a lexo string (Phase 4 Step 1).
+ * `position` is a Float (Phase 5).
  */
 export interface TaskItem {
   id: string;
   title: string;
   description: string | null;
   columnId: string;
-  position: string;
+  position: number;
   createdAt: Date;
 }
 
@@ -81,15 +79,10 @@ async function assertBoardAccess(
 /**
  * Create a new task in a column the caller has access to.
  *
- * Position is assigned by `lexoPosition.between(max(existing), null)`,
- * which appends to the end of the column with a fresh lexo string. For
- * an empty column, `lexoPosition.first()` is used directly.
- *
- * If the helper's open-ended append exhausts the precision budget
- * (returns `null`), we re-pack the column's existing tasks to fresh
- * lexo positions in row order, then take the new task's position
- * from the repacked tail. The create + re-pack happen inside a single
- * `prisma.$transaction` so the column is never observably inconsistent.
+ * Position is assigned by `floatPosition.nextAppend(MAX(existing))`,
+ * which appends to the end of the column with a fresh Float
+ * (`max + 1000`). For an empty column, `nextAppend(null)` returns
+ * `1000`.
  *
  * The `:columnId` and parent board are normally validated by the
  * `loadColumn` middleware upstream, but this function re-loads the
@@ -110,55 +103,34 @@ export async function createTask(
   }
   await assertBoardAccess(userId, column.board);
 
-  return prisma.$transaction(async (tx) => {
-    // Existing tasks in the column, ordered by `position asc` so
-    // the re-pack below can reuse this ordering verbatim.
-    const existing = await tx.task.findMany({
-      where: { columnId },
-      orderBy: { position: "asc" },
-      select: { id: true, position: true },
-    });
-
-    // Try the open-ended append: `between(max, null)`. For an empty
-    // column, `between(null, null)` returns `first()`.
-    const lastTask = existing.length > 0 ? existing[existing.length - 1] : undefined;
-    let nextPosition = between(lastTask?.position ?? null, null);
-
-    // Re-pack fallback: the helper has exhausted its precision budget
-    // at the open upper end. Re-key every existing task PLUS the
-    // new one to fresh `rePackKey` positions in row order.
-    // `rePackKey` is the dense V-tail sequence (a0, a0V, ..., b0,
-    // b0V, ...), which has guaranteed headroom for `between` on
-    // the next user append and is unbounded in size.
-    if (nextPosition === null) {
-      for (let i = 0; i < existing.length; i += 1) {
-        await tx.task.update({
-          where: { id: existing[i].id },
-          data: { position: rePackKey(i) },
-        });
-      }
-      nextPosition = rePackKey(existing.length);
-    }
-
-    const task = await tx.task.create({
-      data: {
-        title: input.title,
-        description: input.description ?? null,
-        columnId,
-        position: nextPosition,
-      },
-      select: {
-        id: true,
-        title: true,
-        description: true,
-        columnId: true,
-        position: true,
-        createdAt: true,
-      },
-    });
-
-    return task;
+  // Existing tasks ordered by `position desc` so the first row is
+  // MAX — a single fetch, no aggregate query needed.
+  const tail = await prisma.task.findFirst({
+    where: { columnId },
+    orderBy: { position: "desc" },
+    select: { position: true },
   });
+
+  const nextPosition = nextAppend(tail?.position ?? null);
+
+  const task = await prisma.task.create({
+    data: {
+      title: input.title,
+      description: input.description ?? null,
+      columnId,
+      position: nextPosition,
+    },
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      columnId: true,
+      position: true,
+      createdAt: true,
+    },
+  });
+
+  return task;
 }
 
 /**
@@ -225,8 +197,7 @@ export async function getTask(
 /**
  * Update a task's mutable fields. Only `title` and `description` are
  * mutable here — `position` and `columnId` are reserved for the
- * Phase 4 `moveTask` endpoint (REQ-4.3.1) and cannot be patched via
- * `PATCH /api/tasks/:id`.
+ * `moveTask` endpoint and cannot be patched via `PATCH /api/tasks/:id`.
  *
  * The input is already pre-validated by the `UpdateTaskSchema`'s
  * `.refine()`, which guarantees at least one field is present. We
@@ -310,7 +281,7 @@ export async function deleteTask(
 }
 
 // ---------------------------------------------------------------------------
-// Move — Phase 4 Step 3
+// Move — Phase 4 Step 3, rewritten for Float in Phase 5
 // ---------------------------------------------------------------------------
 
 /**
@@ -333,16 +304,20 @@ export async function deleteTask(
  *        — `toIndex` is clamped to the destination's task count, so
  *        `tasks[toIndex]` is `undefined` only when appending past the
  *        end).
- *     c. Compute `newPosition = lexoPosition.between(before?.position
- *        ?? null, after?.position ?? null)`.
- *     d. If `newPosition === null` (midpoint exhausted), re-pack the
- *        destination column's tasks with fresh lexo positions in row
- *        order, then read the moved task's final position from the
- *        re-packed list. The re-pack is also inside the outer
- *        transaction so it's atomic with the move.
- *     e. Otherwise update the task with both the new `columnId` and
- *        the new `position` in one Prisma call.
+ *     c. Compute `newPosition = floatPosition.between(before, after)`.
+ *        The helper handles all four cases (between, append, prepend,
+ *        empty) and is O(1) — no iteration over the column.
+ *     d. Update the task with both the new `columnId` and the new
+ *        `position` in one Prisma call.
  *  3. Return the moved task in the full task shape.
+ *
+ * KNOWN LIMITATION: Float precision floor. After ~50 midpoint inserts
+ * between two neighbors, `between(prev, next)` returns `prev` because
+ * the gap is smaller than `Number.EPSILON * prev`. The move still
+ * returns 200, but the card lands on the wrong neighbor. Workaround:
+ * call `PATCH /api/boards/:id/columns/reorder` (which re-keys to fresh
+ * 1000-step Floats in row order via `floatPosition.rePack`) to reset
+ * the precision budget.
  *
  * The route's middleware chain (`loadColumn` on `:columnId` + `loadTask`
  * on `:taskId` + `requireBoardAccess`) has already authorized the
@@ -380,7 +355,7 @@ export async function moveTask(
   // Defensive clamp: `zod` already rejects negative `toIndex`, so
   // reaching a non-integer or negative value here is a programmer
   // error. The clamp below is the documented behaviour for
-  // "toIndex larger than the column length" (REQ-4.3.12).
+  // "toIndex larger than the column length".
   if (!Number.isInteger(input.toIndex) || input.toIndex < 0) {
     throw new HttpError(400, "toIndex must be a non-negative integer");
   }
@@ -396,14 +371,16 @@ export async function moveTask(
   }
   await assertBoardAccess(userId, destColumn.board);
 
-  // Cross-board moves are forbidden (REQ-4.3.7). 403, not 404 — the
-  // caller has access to one of the boards and is asking to mutate a
-  // cross-board relationship that doesn't exist.
+  // Cross-board moves are forbidden. 403, not 404 — the caller has
+  // access to one of the boards and is asking to mutate a cross-board
+  // relationship that doesn't exist.
   if (task.column.boardId !== destColumn.boardId) {
     throw new HttpError(403, "Cross-board moves are not allowed");
   }
 
-  // 2. Atomic move + (optional) re-pack.
+  // 2. Atomic move. The Float midpoint is O(1) — no transaction needed
+  // for a single-row update, but we still wrap in $transaction so
+  // the read-then-write is consistent under concurrent moves.
   return prisma.$transaction(async (tx) => {
     // 2a. List the destination column's tasks EXCLUDING the task
     // being moved (so a same-column reorder picks the right
@@ -424,50 +401,14 @@ export async function moveTask(
       clampedIndex < destTasks.length ? destTasks[clampedIndex] : undefined;
 
     // 2c. Ask the helper for a position strictly between the
-    // neighbours (or at the open end).
-    let newPosition = between(
+    // neighbours (or at the open end). The four cases (between /
+    // append / prepend / empty) collapse to one O(1) call.
+    const newPosition = between(
       beforeTask?.position ?? null,
       afterTask?.position ?? null
     );
 
-    // 2d. Re-pack fallback: the helper has exhausted its precision
-    // budget between two adjacent positions. Re-key the column
-    // (now INCLUDING the moved task, inserted at `clampedIndex`)
-    // to fresh `rePackKey` positions in row order, then read the
-    // moved task's final position off the re-packed list.
-    // `rePackKey` is the dense V-tail sequence with guaranteed
-    // headroom, so the re-pack doesn't itself hit the precision
-    // budget. Still inside the same transaction.
-    if (newPosition === null) {
-      // Build the in-memory re-keyed order: existing tasks
-      // (destTasks, already in the right order with the moved
-      // task excluded) + the moved task at `clampedIndex`.
-      const ordered: { id: string }[] = destTasks.map((t) => ({ id: t.id }));
-      ordered.splice(clampedIndex, 0, { id: taskId });
-      // Re-key in row order using `rePackKey(i)`. O(n) writes,
-      // still atomic at the outer `tx` boundary.
-      const newPositions = new Map<string, string>();
-      for (let i = 0; i < ordered.length; i += 1) {
-        newPositions.set(ordered[i].id, rePackKey(i));
-      }
-      // Apply the re-pack row by row inside the transaction. Prisma
-      // doesn't yet expose a multi-row `updateMany` keyed on `id`,
-      // but the writes are still atomic at the outer `tx` boundary.
-      for (const [id, pos] of newPositions) {
-        await tx.task.update({ where: { id }, data: { position: pos } });
-      }
-      // The moved task now lives in the destination column with
-      // a fresh position. Reflect that here so the returned
-      // shape is consistent with the post-move state.
-      newPosition = newPositions.get(taskId) ?? null;
-      if (newPosition === null) {
-        // Defensive: shouldn't happen — we just inserted the id
-        // into the map above.
-        throw new HttpError(500, "Failed to compute new position after re-pack");
-      }
-    }
-
-    // 2e. Persist the move. Same-column moves are fine: updating
+    // 2d. Persist the move. Same-column moves are fine: updating
     // `columnId` to the same value is a no-op but cheap.
     const moved = await tx.task.update({
       where: { id: taskId },

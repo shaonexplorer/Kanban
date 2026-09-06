@@ -22,11 +22,12 @@ export function fetchMyBoards(): Promise<
 
 /**
  * Stable query key for the caller's boards. Used by
- * `useCreateBoardMutation` (invalidates on success so the home
- * page's `EmptyBoardsState` clears on the next visit) and the
- * future `useFetchMyBoards` hook (if/when one is added).
+ * `useCreateBoardMutation` and `useAcceptInvitationMutation`
+ * (invalidate on success so the Sidebar / `useMyBoardsQuery`
+ * refetches and the new board appears). `useMyBoardsQuery`
+ * itself keys on this same symbol so the two stay in sync.
  */
-export const myBoardsQueryKey = ["my-boards"] as const;
+export const myBoardsQueryKey = ["boards"] as const;
 
 export interface CreateBoardInput {
   title: string;
@@ -144,6 +145,63 @@ export function moveColumn(
   return api
     .post<Column>(`/columns/${columnId}/move`, body)
     .then((r) => r.data);
+}
+
+/** Response from `POST /api/boards/:boardId/columns` — a freshly
+ *  appended column in the server's wire shape. The cache side of
+ *  the create-column mutation maps this to a full `Column` (with
+ *  an empty `tasks` array) so the new column appears in the
+ *  board view without a follow-up refetch. */
+export interface ColumnMutationResult {
+  id: string;
+  title: string;
+  boardId: string;
+  position: number;
+}
+
+export function createColumn(
+  boardId: string,
+  body: { title: string },
+): Promise<ColumnMutationResult> {
+  return api
+    .post<ColumnMutationResult>(`/boards/${boardId}/columns`, body)
+    .then((r) => r.data);
+}
+
+/**
+ * `PATCH /api/columns/:id` — rename a column. The wire response
+ * is `ColumnMutationResult` (id / title / boardId / position,
+ * no `tasks`); the `useUpdateColumnMutation` hook is responsible
+ * for mapping the server shape back into the cache's full
+ * `Column` (with the existing `tasks` preserved).
+ */
+export function updateColumn(
+  columnId: string,
+  body: { title: string },
+): Promise<ColumnMutationResult> {
+  return api
+    .patch<ColumnMutationResult>(`/columns/${columnId}`, body)
+    .then((r) => r.data);
+}
+
+/**
+ * `DELETE /api/columns/:id`. Cascades to the column's tasks via
+ * the schema's `onDelete: Cascade` on `Task.column`. Returns
+ * `void` to mirror `deleteTask` (line 85-87).
+ */
+export function deleteColumn(columnId: string): Promise<void> {
+  return api.delete(`/columns/${columnId}`).then(() => undefined);
+}
+
+/**
+ * `DELETE /api/boards/:id`. Soft-deletes the board (server stamps
+ * `deletedAt = now()`); subsequent reads 404. Owner-only on the
+ * server (`requireBoardOwner`). No Undo on the client — matches
+ * `deleteColumn` (re-creating a cascade-wiped tree of columns
+ * and tasks from a snapshot is too expensive / race-prone).
+ */
+export function deleteBoard(boardId: string): Promise<void> {
+  return api.delete(`/boards/${boardId}`).then(() => undefined);
 }
 
 /**
