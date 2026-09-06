@@ -61,7 +61,8 @@ function setAuthCookie(res: Response, token: string): void {
   res.cookie(AUTH_COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: config.NODE_ENV === "production",
+    // secure: config.NODE_ENV === "production",
+    secure: true,
     path: "/",
     maxAge: jwtExpiresInToMs(config.JWT_EXPIRES_IN),
   });
