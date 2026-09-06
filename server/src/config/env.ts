@@ -21,6 +21,7 @@ const EnvSchema = z.object({
   // (localhost:3000 → localhost:4000) and production. Comma-separated
   // for multiple allowed origins.
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
+
   // Toggles `Secure` on the auth cookie. In dev (HTTP) we leave it
   // off because browsers ignore `Secure` cookies on plain HTTP. In
   // production / staging behind HTTPS it must be `production`.
