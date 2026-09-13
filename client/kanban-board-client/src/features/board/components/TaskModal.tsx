@@ -556,15 +556,21 @@ export function TaskModal(props: TaskModalProps) {
   }
 
   // Phase 5 Step 10 — priority cycling. Each click advances to the
-  // next priority (Low → Medium → High → Urgent → None → Low…).
-  // The parent's `onPriorityChange` fires `PATCH /api/tasks/:id`
-  // with `{ priority }` and the board cache syncs optimistically.
+  // next priority (Low → Medium → High → Urgent → Low…). When at
+  // Urgent, the cycle wraps back to Low. The `null`/None state is
+  // only reachable as an initial value (a task created without a
+  // priority) — it is not part of the cycle because the server's
+  // `UpdateTaskSchema` rejects `priority: null` (Zod `.optional()`
+  // allows `undefined` but not `null`), so sending `null` would
+  // 400 and the optimistic update would roll back. The parent's
+  // `onPriorityChange` fires `PATCH /api/tasks/:id` with `{ priority }`
+  // and the board cache syncs optimistically.
   const priorityCycle: TaskPriority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
   function handlePriorityClick() {
     const current = task?.priority ?? null;
     const idx = current ? priorityCycle.indexOf(current as TaskPriority) : -1;
     const next: TaskPriority | null =
-      idx < 0 ? "LOW" : idx < 3 ? priorityCycle[idx + 1]! : null;
+      idx < 0 ? "LOW" : priorityCycle[(idx + 1) % priorityCycle.length]!;
     onPriorityChange?.(next);
   }
 
@@ -1042,7 +1048,7 @@ export function TaskModal(props: TaskModalProps) {
           </div>
 
           {/* ----- Right column: metadata sidebar ----- */}
-          <aside className="md:col-span-4 flex flex-col space-y-space-lg bg-surface-container-low/70 p-space-md rounded-xl">
+          <aside className="max-h-fit md:col-span-4 flex flex-col space-y-space-lg bg-surface-container-low/70 p-space-md rounded-xl">
             {/* Status */}
             <Field label="Status">
               <button

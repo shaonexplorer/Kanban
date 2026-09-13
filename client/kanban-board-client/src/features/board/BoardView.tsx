@@ -1057,7 +1057,7 @@ export default function BoardView({ boardId }: BoardViewProps) {
             >
               <div
                 ref={boardScrollRef}
-                className="flex-1 overflow-x-auto kanban-scroll px-space-xl py-space-lg select-none"
+                className="flex-1 overflow-x-auto px-space-xl py-space-lg select-none"
               >
                 <div className="flex items-start gap-gutter-board min-w-max pb-space-3xl">
                   {board.columns.length === 0 ? (

@@ -136,7 +136,7 @@ export function Sidebar({ collapsed = false }: SidebarProps = {}) {
           </div>
         </div> */}
 
-        <div className="flex-1 overflow-y-auto board-scroll px-space-md py-space-sm space-y-space-md">
+        <div className="flex-1 overflow-y-auto px-space-md py-space-sm space-y-space-md">
           {/* Primary nav */}
           <nav className="space-y-space-2xs">
             {primaryNav.map((item) => {
