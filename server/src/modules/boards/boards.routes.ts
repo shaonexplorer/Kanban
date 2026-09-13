@@ -14,6 +14,7 @@ import {
   InviteMemberSchema,
   MemberParamsSchema,
   UpdateBoardSchema,
+  UpdateMemberRoleSchema,
 } from "./boards.validation.js";
 
 /**
@@ -95,6 +96,19 @@ router.delete(
   loadBoard(),
   requireBoardOwner,
   asyncHandler(boardsController.removeMember)
+);
+
+// Phase 5 Step 10 — member role change. Uses the same param schema as
+// removeMember (both target the same path pattern); different body schema
+// and a different controller method.
+router.patch(
+  "/:id/members/:userId",
+  requireAuth,
+  validate(MemberParamsSchema, "params"),
+  loadBoard(),
+  requireBoardOwner,
+  validate(UpdateMemberRoleSchema),
+  asyncHandler(boardsController.updateMemberRole)
 );
 
 export default router;

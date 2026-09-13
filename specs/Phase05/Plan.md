@@ -926,7 +926,7 @@ the easy mistakes (import order, unused vars, missing `await`).
 | 6   | Quick-add keyboard shortcut (Step 6 — base; stretch goals b/m are separate)                               | 60 min           | ⬜ Pending      |
 | 7   | Backend input-validation audit script (Step 7)                                                             | 60 min           | ⬜ Pending      |
 | 8   | Backend structured logging (Step 8)                                                                       | 90 min           | ⬜ Pending      |
-| 9   | Backend rate limiting on auth (Step 9)                                                                    | 60 min           | ⬜ Pending      |
+| 9   | Backend rate limiting on auth (Step 9)                                                                    | 60 min           | ✅ Done        |
 | 9a  | Board invitation inbox UI (Step 9a — recipient accept/decline; backend endpoints from Phase 2)             | 90 min           | ✅ Shipped      |
 | 10  | Backend schema additions for the Phase 5 UX (Step 10)                                                      | 120 min          | ⬜ Pending      |
 | 11  | Backend `jest` suite (Step 11)                                                                             | 240 min          | ⬜ Pending      |

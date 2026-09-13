@@ -9,6 +9,13 @@ import { z } from "zod";
  * - `ColumnScopedTaskParamSchema`   — `req.params` for `/api/columns/:columnId/tasks/...`.
  * - `ColumnAndTaskIdParamSchema`    — `req.params` for the move route.
  * - `TaskIdParamSchema`             — `req.params` for `/api/tasks/:id`.
+ * - `CreateSubtaskSchema`           — body for `POST /api/tasks/:id/subtasks`.
+ * - `UpdateSubtaskSchema`           — body for `PATCH /api/tasks/:id/subtasks/:subtaskId`.
+ * - `TaskSubtaskParamsSchema`       — `req.params` for subtask routes.
+ * - `CreateCommentSchema`           — body for `POST /api/tasks/:id/comments`.
+ * - `TaskCommentParamsSchema`       — `req.params` for comment routes (shares the taskId param).
+ * - `SetAssigneesSchema`            — body for `PUT /api/tasks/:id/assignees`.
+ * - `TaskAssigneesParamsSchema`      — `req.params` for the assignees route.
  *
  * All id fields are validated as UUIDs at the edge so the service layer
  * can trust them and we get a clean 400 instead of a Prisma error.
@@ -43,18 +50,37 @@ export type CreateTaskInput = z.infer<typeof CreateTaskSchema>;
  * Body for `PATCH /api/tasks/:id`.
  *  - title: optional, 1–200 characters after trim.
  *  - description: optional, ≤ 2000 characters after trim.
- *  - At least one of `title` / `description` must be supplied — otherwise
- *    there's nothing to update. `.refine()` enforces that here so the
- *    service never has to second-guess an empty patch.
+ *  - starred (Phase 5 Step 10): optional boolean.
+ *  - priority (Phase 5 Step 10): optional LOW | MEDIUM | HIGH | URGENT.
+ *  - dueDate (Phase 5 Step 10): optional ISO-8601 datetime string.
+ *  - storyPoints (Phase 5 Step 10): optional positive integer.
+ *  - labels (Phase 5 Step 10): optional string array; each label ≤ 100 chars.
+ *  - At least one of the above must be supplied — `.refine()` enforces that
+ *    here so the service never has to second-guess an empty patch.
+ *  - `assignees` is intentionally excluded — the dedicated
+ *    `PUT /api/tasks/:id/assignees` endpoint owns that relation.
  */
 export const UpdateTaskSchema = z
   .object({
     title: taskTitleSchema.optional(),
     description: taskDescriptionSchema.optional(),
+    starred: z.boolean().optional(),
+    priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
+    dueDate: z.string().datetime({ offset: true }).optional(),
+    storyPoints: z.number().int().positive().optional(),
+    labels: z.array(z.string().trim().max(100)).optional(),
   })
-  .refine((v) => v.title !== undefined || v.description !== undefined, {
-    message: "At least one of title or description must be provided",
-  });
+  .refine(
+    (v) =>
+      v.title !== undefined ||
+      v.description !== undefined ||
+      v.starred !== undefined ||
+      v.priority !== undefined ||
+      v.dueDate !== undefined ||
+      v.storyPoints !== undefined ||
+      v.labels !== undefined,
+    { message: "At least one field must be provided" }
+  );
 export type UpdateTaskInput = z.infer<typeof UpdateTaskSchema>;
 
 /**
@@ -106,3 +132,72 @@ export const MoveTaskSchema = z.object({
   toIndex: z.number().int().min(0),
 });
 export type MoveTaskInput = z.infer<typeof MoveTaskSchema>;
+
+// ---------------------------------------------------------------------------
+// Phase 5 Step 10 — subtasks
+// ---------------------------------------------------------------------------
+
+/**
+ * Body for `POST /api/tasks/:id/subtasks`.
+ *  - title: 1–200 characters after trim.
+ */
+export const CreateSubtaskSchema = z.object({
+  title: taskTitleSchema,
+});
+export type CreateSubtaskInput = z.infer<typeof CreateSubtaskSchema>;
+
+/**
+ * Body for `PATCH /api/tasks/:id/subtasks/:subtaskId`.
+ *  - title: optional, 1–200 characters after trim.
+ *  - done:   optional boolean.
+ *  - At least one of `title` or `done` must be supplied.
+ */
+export const UpdateSubtaskSchema = z
+  .object({
+    title: taskTitleSchema.optional(),
+    done: z.boolean().optional(),
+  })
+  .refine((v) => v.title !== undefined || v.done !== undefined, {
+    message: "At least one of `title` or `done` must be provided",
+  });
+export type UpdateSubtaskInput = z.infer<typeof UpdateSubtaskSchema>;
+
+/**
+ * Path params for any `/api/tasks/:id/subtasks/...` route.
+ *  - id:        UUID of the parent task.
+ *  - subtaskId: UUID of the subtask.
+ */
+export const TaskSubtaskParamsSchema = z.object({
+  id: z.string().uuid(),
+  subtaskId: z.string().uuid(),
+});
+export type TaskSubtaskParams = z.infer<typeof TaskSubtaskParamsSchema>;
+
+// ---------------------------------------------------------------------------
+// Phase 5 Step 10 — comments
+// ---------------------------------------------------------------------------
+
+/**
+ * Body for `POST /api/tasks/:id/comments`.
+ *  - body: 1–5000 characters after trim.
+ */
+export const CreateCommentSchema = z.object({
+  body: z.string().trim().min(1).max(5000),
+});
+export type CreateCommentInput = z.infer<typeof CreateCommentSchema>;
+
+// ---------------------------------------------------------------------------
+// Phase 5 Step 10 — assignees
+// ---------------------------------------------------------------------------
+
+/**
+ * Body for `PUT /api/tasks/:id/assignees`.
+ * Replaces the full assignee set with the supplied `userIds`.
+ * Empty array clears all assignees.
+ * Each `userId` must be a valid UUID; the service verifies the user
+ * exists and is a member of the task's board (403 if not).
+ */
+export const SetAssigneesSchema = z.object({
+  userIds: z.array(z.string().uuid()).default([]),
+});
+export type SetAssigneesInput = z.infer<typeof SetAssigneesSchema>;

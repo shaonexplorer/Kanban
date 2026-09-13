@@ -60,9 +60,12 @@ function jwtExpiresInToMs(expiresIn: string | number): number {
 function setAuthCookie(res: Response, token: string): void {
   res.cookie(AUTH_COOKIE_NAME, token, {
     httpOnly: true,
-    sameSite: "none",
-    // secure: config.NODE_ENV === "production",
-    secure: true,
+    sameSite: "lax",
+    // Only enforce `Secure` in production. In development (HTTP on
+    // localhost) the flag must be off so browsers + the PowerShell
+    // e2e harness `WebRequestSession` actually send the cookie back
+    // (a Secure cookie is never transmitted over plain HTTP).
+    secure: config.NODE_ENV === "production",
     path: "/",
     maxAge: jwtExpiresInToMs(config.JWT_EXPIRES_IN),
   });
@@ -116,8 +119,10 @@ export async function login(req: Request, res: Response): Promise<void> {
 export async function logout(_req: Request, res: Response): Promise<void> {
   res.clearCookie(AUTH_COOKIE_NAME, {
     path: "/",
-    sameSite: "none",
-    secure: true,
+    sameSite: "lax",
+    // Match `setAuthCookie`'s environment gate so the cookie is only
+    // cleared with the same `Secure` flag it was set with.
+    secure: config.NODE_ENV === "production",
   });
   res.status(204).send();
 }

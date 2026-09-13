@@ -1,11 +1,16 @@
 import { HttpError } from "../../common/errors/HttpError.js";
 import { prisma } from "../../lib/prisma.js";
-import { between, nextAppend } from "../../common/utils/floatPosition.js";
+import { nextAppend } from "../../common/utils/floatPosition.js";
 import type {
+  CreateSubtaskInput,
+  UpdateSubtaskInput,
+  CreateCommentInput,
+  SetAssigneesInput,
   CreateTaskInput,
   MoveTaskInput,
   UpdateTaskInput,
 } from "./tasks.validation.js";
+import type { TaskPriority } from "../../generated/prisma/client.js";
 
 /**
  * Service layer for the `tasks` module.
@@ -25,6 +30,11 @@ import type {
  * a position from the four midpoint cases exposed by
  * `floatPosition.between`. See `src/common/utils/floatPosition.ts` for
  * the precision-floor caveat.
+ *
+ * Phase 5 Step 10 widens the task surface with: starred, priority,
+ * dueDate, storyPoints, labels, subtasks, comments, assignees. The
+ * `assignees` relation is owned exclusively by `PUT /api/tasks/:id/assignees`
+ * — `PATCH /api/tasks/:id` never touches it.
  */
 
 // ---------------------------------------------------------------------------
@@ -34,7 +44,9 @@ import type {
 
 /**
  * The full task shape returned by every read / mutation endpoint.
- * `position` is a Float (Phase 5).
+ * Phase 5 Step 10 adds starred, priority, dueDate, storyPoints, labels,
+ * and the assignees array (joined with email so the client doesn't
+ * need a follow-up call).
  */
 export interface TaskItem {
   id: string;
@@ -43,6 +55,32 @@ export interface TaskItem {
   columnId: string;
   position: number;
   createdAt: Date;
+  // Phase 5 Step 10
+  starred: boolean;
+  priority: TaskPriority | null;
+  dueDate: Date | null;
+  storyPoints: number | null;
+  labels: string[];
+  assignees: Array<{ userId: string; email: string }>;
+}
+
+/** Shape of a single subtask in read / mutation responses. */
+export interface SubtaskItem {
+  id: string;
+  taskId: string;
+  title: string;
+  done: boolean;
+  position: number;
+  createdAt: Date;
+}
+
+/** Shape of a single comment in the list / create responses. */
+export interface CommentItem {
+  id: string;
+  taskId: string;
+  body: string;
+  createdAt: Date;
+  author: { id: string; email: string };
 }
 
 // ---------------------------------------------------------------------------
@@ -71,6 +109,58 @@ async function assertBoardAccess(
     throw new HttpError(403, "Forbidden");
   }
 }
+
+// ---------------------------------------------------------------------------
+// Read helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the shared subtask select for `subtasks` ordered by `position asc`.
+ */
+const subtaskSelect = {
+  id: true,
+  taskId: true,
+  title: true,
+  done: true,
+  position: true,
+  createdAt: true,
+} as const;
+
+/**
+ * Build the shared assignee select (traverses the `user` relation to
+ * get the email) ordered by `userId asc`.
+ */
+const assigneeSelect = {
+  userId: true,
+  user: { select: { email: true } },
+} as const;
+
+/**
+ * Build the shared subtask + assignee + comment count select used by
+ * the board-detail board query (avoids over-fetching on the full
+ * board view — subtasks and comments are loaded separately via
+ * their own endpoints).
+ *
+ * Exported so `boards.service.ts` can reuse the same select in the
+ * board-detail query (avoids duplication and keeps the shapes in sync).
+ */
+export const taskItemSelect = {
+  id: true,
+  title: true,
+  description: true,
+  columnId: true,
+  position: true,
+  createdAt: true,
+  starred: true,
+  priority: true,
+  dueDate: true,
+  storyPoints: true,
+  labels: true,
+  assignees: {
+    select: assigneeSelect,
+    orderBy: { userId: "asc" },
+  },
+} as const;
 
 // ---------------------------------------------------------------------------
 // CRUD
@@ -119,18 +209,33 @@ export async function createTask(
       description: input.description ?? null,
       columnId,
       position: nextPosition,
+      // Phase 5 Step 10: new fields default at the DB layer
+      starred: false,
+      priority: undefined,
+      dueDate: undefined,
+      storyPoints: undefined,
+      labels: [],
     },
     select: {
-      id: true,
-      title: true,
-      description: true,
-      columnId: true,
-      position: true,
-      createdAt: true,
+      ...taskItemSelect,
+      subtasks: { select: subtaskSelect, orderBy: { position: "asc" } },
     },
   });
 
-  return task;
+  return {
+    id: task.id,
+    title: task.title,
+    description: task.description,
+    columnId: task.columnId,
+    position: task.position,
+    createdAt: task.createdAt,
+    starred: task.starred,
+    priority: task.priority,
+    dueDate: task.dueDate,
+    storyPoints: task.storyPoints,
+    labels: task.labels,
+    assignees: task.assignees.map((a) => ({ userId: a.userId, email: a.user.email })),
+  };
 }
 
 /**
@@ -149,18 +254,29 @@ export async function listTasks(
   }
   await assertBoardAccess(userId, column.board);
 
-  return prisma.task.findMany({
+  const tasks = await prisma.task.findMany({
     where: { columnId },
     orderBy: { position: "asc" },
     select: {
-      id: true,
-      title: true,
-      description: true,
-      columnId: true,
-      position: true,
-      createdAt: true,
+      ...taskItemSelect,
+      subtasks: { select: subtaskSelect, orderBy: { position: "asc" } },
     },
   });
+
+  return tasks.map((task) => ({
+    id: task.id,
+    title: task.title,
+    description: task.description,
+    columnId: task.columnId,
+    position: task.position,
+    createdAt: task.createdAt,
+    starred: task.starred,
+    priority: task.priority,
+    dueDate: task.dueDate,
+    storyPoints: task.storyPoints,
+    labels: task.labels,
+    assignees: task.assignees.map((a) => ({ userId: a.userId, email: a.user.email })),
+  }));
 }
 
 /**
@@ -177,12 +293,20 @@ export async function getTask(
     where: { id: taskId },
     include: {
       column: { include: { board: { select: { id: true, ownerId: true, deletedAt: true } } } },
+      subtasks: { select: subtaskSelect, orderBy: { position: "asc" } },
     },
   });
   if (!task || task.column.board.deletedAt !== null) {
     throw new HttpError(404, "Task not found");
   }
   await assertBoardAccess(userId, task.column.board);
+
+  // Re-load assignees for the full shape
+  const assignees = await prisma.taskAssignee.findMany({
+    where: { taskId },
+    select: { userId: true, user: { select: { email: true } } },
+    orderBy: { userId: "asc" },
+  });
 
   return {
     id: task.id,
@@ -191,18 +315,25 @@ export async function getTask(
     columnId: task.columnId,
     position: task.position,
     createdAt: task.createdAt,
+    starred: task.starred,
+    priority: task.priority,
+    dueDate: task.dueDate,
+    storyPoints: task.storyPoints,
+    labels: task.labels,
+    assignees: assignees.map((a) => ({ userId: a.userId, email: a.user.email })),
   };
 }
 
 /**
- * Update a task's mutable fields. Only `title` and `description` are
- * mutable here — `position` and `columnId` are reserved for the
- * `moveTask` endpoint and cannot be patched via `PATCH /api/tasks/:id`.
+ * Update a task's mutable fields. Only the fields accepted by
+ * `UpdateTaskSchema` are mutable — `position` and `columnId` are
+ * reserved for the `moveTask` endpoint; `assignees` is owned by
+ * `setAssignees`.
  *
  * The input is already pre-validated by the `UpdateTaskSchema`'s
  * `.refine()`, which guarantees at least one field is present. We
- * still build the `data` object from the defined keys so we never
- * push an `undefined` to Prisma (which would otherwise write NULL).
+ * build the `data` object from the defined keys so we never push an
+ * `undefined` to Prisma (which would otherwise write NULL / skip).
  */
 export async function updateTask(
   userId: string,
@@ -222,24 +353,47 @@ export async function updateTask(
 
   // Build the patch from defined keys only — never pass `undefined`
   // through to Prisma's `data`.
-  const data: { title?: string; description?: string | null } = {};
+  type UpdateData = {
+    title?: string;
+    description?: string | null;
+    starred?: boolean;
+    priority?: TaskPriority | null;
+    dueDate?: Date | null;
+    storyPoints?: number | null;
+    labels?: string[];
+  };
+  const data: UpdateData = {};
   if (input.title !== undefined) data.title = input.title;
   if (input.description !== undefined) data.description = input.description;
+  if (input.starred !== undefined) data.starred = input.starred;
+  if (input.priority !== undefined) data.priority = input.priority;
+  if (input.dueDate !== undefined) data.dueDate = input.dueDate ? new Date(input.dueDate) : null;
+  if (input.storyPoints !== undefined) data.storyPoints = input.storyPoints;
+  if (input.labels !== undefined) data.labels = input.labels;
 
   const updated = await prisma.task.update({
     where: { id: taskId },
     data,
     select: {
-      id: true,
-      title: true,
-      description: true,
-      columnId: true,
-      position: true,
-      createdAt: true,
+      ...taskItemSelect,
+      subtasks: { select: subtaskSelect, orderBy: { position: "asc" } },
     },
   });
 
-  return updated;
+  return {
+    id: updated.id,
+    title: updated.title,
+    description: updated.description,
+    columnId: updated.columnId,
+    position: updated.position,
+    createdAt: updated.createdAt,
+    starred: updated.starred,
+    priority: updated.priority,
+    dueDate: updated.dueDate,
+    storyPoints: updated.storyPoints,
+    labels: updated.labels,
+    assignees: updated.assignees.map((a) => ({ userId: a.userId, email: a.user.email })),
+  };
 }
 
 /**
@@ -378,10 +532,13 @@ export async function moveTask(
     throw new HttpError(403, "Cross-board moves are not allowed");
   }
 
+  // Import here to avoid circular deps (floatPosition is used inline)
+  const { between } = await import("../../common/utils/floatPosition.js");
+
   // 2. Atomic move. The Float midpoint is O(1) — no transaction needed
   // for a single-row update, but we still wrap in $transaction so
   // the read-then-write is consistent under concurrent moves.
-  return prisma.$transaction(async (tx) => {
+  const moved = await prisma.$transaction(async (tx) => {
     // 2a. List the destination column's tasks EXCLUDING the task
     // being moved (so a same-column reorder picks the right
     // neighbors). Order by `position asc` so indexes map directly
@@ -410,19 +567,291 @@ export async function moveTask(
 
     // 2d. Persist the move. Same-column moves are fine: updating
     // `columnId` to the same value is a no-op but cheap.
-    const moved = await tx.task.update({
+    return tx.task.update({
       where: { id: taskId },
       data: { columnId: destColumn.id, position: newPosition },
       select: {
-        id: true,
-        title: true,
-        description: true,
-        columnId: true,
-        position: true,
-        createdAt: true,
+        ...taskItemSelect,
+        subtasks: { select: subtaskSelect, orderBy: { position: "asc" } },
       },
     });
-
-    return moved;
   });
+
+  return {
+    id: moved.id,
+    title: moved.title,
+    description: moved.description,
+    columnId: moved.columnId,
+    position: moved.position,
+    createdAt: moved.createdAt,
+    starred: moved.starred,
+    priority: moved.priority,
+    dueDate: moved.dueDate,
+    storyPoints: moved.storyPoints,
+    labels: moved.labels,
+    assignees: moved.assignees.map((a) => ({ userId: a.userId, email: a.user.email })),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 Step 10 — subtasks
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a new subtask on a task the caller has access to.
+ * Position appends to the end of the existing subtask list.
+ */
+export async function createSubtask(
+  userId: string,
+  taskId: string,
+  input: CreateSubtaskInput
+): Promise<SubtaskItem> {
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    include: { column: { include: { board: { select: { id: true, ownerId: true, deletedAt: true } } } } },
+  });
+  if (!task || task.column.board.deletedAt !== null) {
+    throw new HttpError(404, "Task not found");
+  }
+  await assertBoardAccess(userId, task.column.board);
+
+  const tail = await prisma.taskSubtask.findFirst({
+    where: { taskId },
+    orderBy: { position: "desc" },
+    select: { position: true },
+  });
+  const nextPosition = nextAppend(tail?.position ?? null);
+
+  const subtask = await prisma.taskSubtask.create({
+    data: { taskId, title: input.title, position: nextPosition },
+    select: subtaskSelect,
+  });
+
+  return subtask;
+}
+
+/**
+ * Update a subtask's title and/or done state.
+ */
+export async function updateSubtask(
+  userId: string,
+  taskId: string,
+  subtaskId: string,
+  input: UpdateSubtaskInput
+): Promise<SubtaskItem> {
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    include: { column: { include: { board: { select: { id: true, ownerId: true, deletedAt: true } } } } },
+  });
+  if (!task || task.column.board.deletedAt !== null) {
+    throw new HttpError(404, "Task not found");
+  }
+  await assertBoardAccess(userId, task.column.board);
+
+  // Verify the subtask belongs to the task
+  const existing = await prisma.taskSubtask.findUnique({
+    where: { id: subtaskId },
+    select: { id: true, taskId: true },
+  });
+  if (!existing || existing.taskId !== taskId) {
+    throw new HttpError(404, "Subtask not found");
+  }
+
+  type UpdateSubtaskData = { title?: string; done?: boolean };
+  const data: UpdateSubtaskData = {};
+  if (input.title !== undefined) data.title = input.title;
+  if (input.done !== undefined) data.done = input.done;
+
+  const updated = await prisma.taskSubtask.update({
+    where: { id: subtaskId },
+    data,
+    select: subtaskSelect,
+  });
+
+  return updated;
+}
+
+/**
+ * Delete a subtask. 204 on success; 404 if the subtask or its
+ * parent task doesn't exist.
+ */
+export async function deleteSubtask(
+  userId: string,
+  taskId: string,
+  subtaskId: string
+): Promise<void> {
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    include: { column: { include: { board: { select: { id: true, ownerId: true, deletedAt: true } } } } },
+  });
+  if (!task || task.column.board.deletedAt !== null) {
+    throw new HttpError(404, "Task not found");
+  }
+  await assertBoardAccess(userId, task.column.board);
+
+  try {
+    await prisma.taskSubtask.delete({ where: { id: subtaskId } });
+  } catch (err) {
+    if (
+      err !== null &&
+      typeof err === "object" &&
+      "code" in err &&
+      (err as { code?: string }).code === "P2025"
+    ) {
+      throw new HttpError(404, "Subtask not found");
+    }
+    throw err;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 Step 10 — comments
+// ---------------------------------------------------------------------------
+
+/**
+ * List the most recent comments on a task, newest first.
+ * Returns up to 50 items.
+ */
+export async function listComments(
+  userId: string,
+  taskId: string
+): Promise<CommentItem[]> {
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    include: { column: { include: { board: { select: { id: true, ownerId: true, deletedAt: true } } } } },
+  });
+  if (!task || task.column.board.deletedAt !== null) {
+    throw new HttpError(404, "Task not found");
+  }
+  await assertBoardAccess(userId, task.column.board);
+
+  const comments = await prisma.taskComment.findMany({
+    where: { taskId },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+    select: {
+      id: true,
+      taskId: true,
+      body: true,
+      createdAt: true,
+      author: { select: { id: true, email: true } },
+    },
+  });
+
+  return comments.map((c) => ({
+    id: c.id,
+    taskId: c.taskId,
+    body: c.body,
+    createdAt: c.createdAt,
+    author: { id: c.author.id, email: c.author.email },
+  }));
+}
+
+/**
+ * Post a comment on a task. The comment's `authorId` is the authenticated
+ * caller. `body` is pre-validated (1–5000 chars) by `CreateCommentSchema`.
+ */
+export async function createComment(
+  userId: string,
+  taskId: string,
+  input: CreateCommentInput
+): Promise<CommentItem> {
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    include: { column: { include: { board: { select: { id: true, ownerId: true, deletedAt: true } } } } },
+  });
+  if (!task || task.column.board.deletedAt !== null) {
+    throw new HttpError(404, "Task not found");
+  }
+  await assertBoardAccess(userId, task.column.board);
+
+  const comment = await prisma.taskComment.create({
+    data: { taskId, authorId: userId, body: input.body },
+    select: {
+      id: true,
+      taskId: true,
+      body: true,
+      createdAt: true,
+      author: { select: { id: true, email: true } },
+    },
+  });
+
+  return {
+    id: comment.id,
+    taskId: comment.taskId,
+    body: comment.body,
+    createdAt: comment.createdAt,
+    author: { id: comment.author.id, email: comment.author.email },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 Step 10 — assignees
+// ---------------------------------------------------------------------------
+
+/**
+ * Replace the full assignee set on a task.
+ *
+ * The body `{ userIds: string[] }` is the **complete new set** — the
+ * service atomically deletes all existing rows in `TaskAssignee` for this
+ * task and inserts the new ones. This is simpler than a delta and matches
+ * the v1 UX (the share modal sends the full member list on every save).
+ *
+ * @param userId  The authenticated caller.
+ * @param taskId  The task whose assignees to replace.
+ * @param input   The desired new set of assignee userIds.
+ * @returns The new assignee set with email addresses joined.
+ * @throws 403 — a user in `userIds` is not a member of the task's board.
+ */
+export async function setAssignees(
+  userId: string,
+  taskId: string,
+  input: SetAssigneesInput
+): Promise<Array<{ userId: string; email: string }>> {
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    include: { column: { include: { board: { select: { id: true, ownerId: true, deletedAt: true } } } } },
+  });
+  if (!task || task.column.board.deletedAt !== null) {
+    throw new HttpError(404, "Task not found");
+  }
+  await assertBoardAccess(userId, task.column.board);
+
+  // Validate every userId is a member of this board (owner or BoardUser).
+  // An empty array is valid (clears all assignees).
+  if (input.userIds.length > 0) {
+    const uniqueIds = [...new Set(input.userIds)];
+    const memberships = await prisma.boardUser.findMany({
+      where: { boardId: task.column.boardId, userId: { in: uniqueIds } },
+      select: { userId: true },
+    });
+    const membershipSet = new Set([task.column.board.ownerId, ...memberships.map((m) => m.userId)]);
+    for (const uid of uniqueIds) {
+      if (!membershipSet.has(uid)) {
+        throw new HttpError(403, `User ${uid} is not a member of this board`);
+      }
+    }
+  }
+
+  // Atomic replace: delete all existing, then insert the new set.
+  await prisma.$transaction(async (tx) => {
+    await tx.taskAssignee.deleteMany({ where: { taskId } });
+    if (input.userIds.length > 0) {
+      const uniqueIds = [...new Set(input.userIds)];
+      await tx.taskAssignee.createMany({
+        data: uniqueIds.map((userId) => ({ taskId, userId })),
+        // Skip duplicates if somehow two rows already exist (idempotent safety).
+        skipDuplicates: true,
+      });
+    }
+  });
+
+  // Return the new set with emails joined
+  const assignees = await prisma.taskAssignee.findMany({
+    where: { taskId },
+    select: { userId: true, user: { select: { email: true } } },
+    orderBy: { userId: "asc" },
+  });
+
+  return assignees.map((a) => ({ userId: a.userId, email: a.user.email }));
 }
