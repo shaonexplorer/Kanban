@@ -9,7 +9,7 @@ import {
 } from "react";
 import { Icon } from "./Icon";
 import { UserAvatar } from "./UserAvatar";
-import type { Task } from "../types";
+import type { Task, TaskPriority } from "../types";
 
 /**
  * Local modal-only data model. The modal's interactive fields
@@ -73,7 +73,7 @@ export interface TaskModalProps {
   statusLabel: string;
   /** Priority tokens — `urgent` is the only one that uses the red
    * `error-container` chip in the Stitch design. */
-  priority: "urgent" | "high" | "medium" | "low";
+  priority: "urgent" | "high" | "medium" | "low" | null;
   priorityLabel: string;
   /** Story points — `0` hides the row. */
   storyPoints: number;
@@ -131,15 +131,59 @@ export interface TaskModalProps {
    * a fire-and-forget side channel.
    */
   onSaveStateChange?: (state: "idle" | "saving" | "saved" | "failed") => void;
+
+  // ---- Phase 5 Step 10 callbacks -------------------------------------
+  // These turn the modal's local-state surfaces into round-tripped ones.
+  // Each callback corresponds to one backend endpoint (see Plan §5.1).
+
   /**
-   * Phase 5 Step 10 placeholder. The metadata sidebar's
-   * editable fields (priority, status, due date, labels, story
-   * points) and the subtask add/toggle + comment post actions
-   * call this callback when the user attempts to save. The
-   * parent toasts "Member role change ships in Phase 5 Step 10"
-   * (or similar) and keeps the local state unchanged.
+   * Toggle the star on the current task. Called with the *next*
+   * starred value (already flipped). The parent calls
+   * `useUpdateTaskMutation.mutate({ patch: { starred: next } })`.
    */
-  onStep10SurfaceAttempt?: (surface: string) => void;
+  onStar?: (starred: boolean) => void;
+  /**
+   * Add a new subtask to the task. The parent calls
+   * `POST /api/tasks/:id/subtasks` via `useCreateSubtaskMutation`.
+   */
+  onCreateSubtask?: (title: string) => void;
+  /**
+   * Update a subtask's title and/or `done` state. The parent calls
+   * `PATCH /api/tasks/:id/subtasks/:subtaskId` via
+   * `useUpdateSubtaskMutation`.
+   */
+  onUpdateSubtask?: (
+    subtaskId: string,
+    patch: { title?: string; done?: boolean },
+  ) => void;
+  /**
+   * Delete a subtask. The parent calls
+   * `DELETE /api/tasks/:id/subtasks/:subtaskId`.
+   */
+  onDeleteSubtask?: (subtaskId: string) => void;
+  /**
+   * Post a comment on the task. The parent calls
+   * `POST /api/tasks/:id/comments`.
+   */
+  onCreateComment?: (body: string) => void;
+  /**
+   * Change the task's priority chip. The parent calls
+   * `PATCH /api/tasks/:id` with `{ priority }`.
+   */
+  onPriorityChange?: (priority: TaskPriority | null) => void;
+  /**
+   * Move the task to a different column. The parent calls the
+   * move endpoint (`POST /api/columns/:colId/tasks/:taskId/move`).
+   */
+  onMoveTask?: (toColumnId: string) => void;
+  /**
+   * Replace the task's assignee set. The parent calls
+   * `PUT /api/tasks/:id/assignees`.
+   */
+  onSetAssignees?: (userIds: string[]) => void;
+  /** The board's columns — used to populate the "Move to column"
+   *  dropdown in the metadata sidebar. */
+  boardColumns?: Array<{ id: string; title: string }>;
 }
 
 /** The display "status" of the trash button (idle vs. confirming). */
@@ -195,7 +239,18 @@ export function TaskModal(props: TaskModalProps) {
     onUpdateTask,
     onDeleteTask,
     onSaveStateChange,
-    onStep10SurfaceAttempt,
+    // Phase 5 Step 10
+    onStar,
+    onCreateSubtask,
+    onUpdateSubtask,
+    onDeleteSubtask,
+    onCreateComment,
+    onPriorityChange,
+    onMoveTask,
+    // onSetAssignees accepted as a prop (BoardView wires it to the
+    // PUT /api/tasks/:id/assignees hook) but not wired to the modal
+    // UI — the "Add Assignee" button has no user picker yet.
+    boardColumns = [],
   } = props;
 
   // ---- Local state (mirrors the in-page micro-interactions) ------
@@ -215,22 +270,31 @@ export function TaskModal(props: TaskModalProps) {
   const [descriptionDraft, setDescriptionDraft] = useState(
     task?.description ?? description,
   );
-  // `subtasks` and `comments` remain local state because the
-  // backing endpoints (`POST /api/tasks/:id/subtasks` and
-  // `POST /api/tasks/:id/comments`) ship in Step 10. The
-  // `setSubtasks` / `setComments` setters are reserved for the
-  // Step 10 wiring; until then the local handlers are stubs that
-  // call `onStep10SurfaceAttempt` and leave the arrays unchanged.
-  const [subtasks, setSubtasks] = useState<ModalSubtask[]>(initialSubtasks);
+  // Phase 5 Step 10: subtasks and comments are now wired to the
+  // backend endpoints. Local state mirrors the server rows so the
+  // UI stays snappy (optimistic add / toggle / post); the parent's
+  // mutation callbacks update the React Query cache for the board
+  // view and the comments query respectively. On a cache refetch the
+  // modal re-mounts with `key={task.id}` so local state re-syncs.
+  const [subtasks, setSubtasks] = useState<ModalSubtask[]>(
+    (initialSubtasks ?? task?.subtasks)?.map((s) => ({
+      id: s.id,
+      title: s.title,
+      done: s.done,
+    })) ?? [],
+  );
   const [newSubtask, setNewSubtask] = useState("");
-  const [comments, setComments] = useState<ModalComment[]>(initialComments);
+  // Comments are driven by the prop (fetched via useTaskCommentsQuery
+  // in BoardView). Local state would go stale when the query resolves
+  // async after the modal opens, so we read the prop directly. The
+  // useCreateCommentMutation hook's onMutate optimistically prepends
+  // to the comments query cache, which flows back here as a prop update.
+  const comments = initialComments;
   const [commentDraft, setCommentDraft] = useState("");
-  // Reference the setters so the linter doesn't flag them as
-  // unused — they're reserved for the Step 10 wiring.
-  void setSubtasks;
-  void setComments;
+  // Star state — derived from the task prop so a server-side change
+  // (e.g. from another tab) is reflected on re-mount.
+  const [starred, setStarred] = useState(task?.starred ?? false);
   const [previewMode, setPreviewMode] = useState<"preview" | "raw">("preview");
-  const [starred, setStarred] = useState(false);
   const [deleteState, setDeleteState] = useState<DeleteState>("idle");
   const [linkCopied, setLinkCopied] = useState(false);
   // Phase 5 Step 5: save-state for the autosave footer. "saving"
@@ -402,19 +466,16 @@ export function TaskModal(props: TaskModalProps) {
     setLinkCopied(true);
   }
 
+  // Phase 5 Step 10 — star toggle now round-trips to the server.
+  // The `onStar` callback (wired by BoardView to
+  // `useUpdateTaskMutation`) fires `PATCH /api/tasks/:id` with
+  // `{ starred: next }`. Local state updates immediately for
+  // snappy feedback; the board cache syncs via the mutation's
+  // optimistic update.
   function handleStar() {
-    // Local-state-only: the server's `UpdateTaskSchema` doesn't
-    // yet accept `starred` (Phase 5 Step 10 widens the Task
-    // model — see `specs/Phase05/Plan.md` §10.1). The previous
-    // implementation fired a PATCH with `{ title: task.title }`
-    // as a no-op body, which was misleading: it looked like the
-    // star was persisting, but the next refetch would silently
-    // revert the fill. The honest pattern is to keep the toggle
-    // purely client-side until the server can persist it; a
-    // Step 10 follow-up will replace this `setStarred` with a
-    // real `onUpdateTask({ patch: { starred: next } })` call
-    // and lift the state into the cache.
-    setStarred((s) => !s);
+    const next = !starred;
+    setStarred(next);
+    onStar?.(next);
   }
 
   function handleDelete() {
@@ -432,10 +493,21 @@ export function TaskModal(props: TaskModalProps) {
     }
   }
 
+  // Phase 5 Step 10 — subtask add / toggle now round-trip to the
+  // server via `POST /api/tasks/:id/subtasks` and
+  // `PATCH /api/tasks/:id/subtasks/:subtaskId`. Local state is
+  // updated optimistically so the checklist feels instant; the
+  // parent's mutation callbacks update the board cache.
   function handleAddSubtask() {
     const val = newSubtask.trim();
     if (!val) return;
-    onStep10SurfaceAttempt?.("subtasks");
+    const optimisticId = `optimistic-${crypto.randomUUID()}`;
+    setSubtasks((prev) => [
+      ...prev,
+      { id: optimisticId, title: val, done: false },
+    ]);
+    setNewSubtask("");
+    onCreateSubtask?.(val);
   }
 
   function handleSubtaskKeyDown(e: KeyboardEvent<HTMLInputElement>) {
@@ -446,15 +518,46 @@ export function TaskModal(props: TaskModalProps) {
   }
 
   function handleToggleSubtask(id: string) {
-    onStep10SurfaceAttempt?.("subtasks");
-    void id;
+    const current = subtasks.find((s) => s.id === id);
+    if (!current) return;
+    const next = !current.done;
+    setSubtasks((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, done: next } : s)),
+    );
+    onUpdateSubtask?.(id, { done: next });
   }
 
+  function handleDeleteSubtask(id: string) {
+    setSubtasks((prev) => prev.filter((s) => s.id !== id));
+    onDeleteSubtask?.(id);
+  }
+
+  // Phase 5 Step 10 — comment post now round-trips to the server
+  // via `POST /api/tasks/:id/comments`. Local state is optimistically
+  // prepended so the activity feed feels instant; the parent's
+  // mutation callback updates the comments query cache.
   function handlePostComment(e?: FormEvent) {
     e?.preventDefault();
     const body = commentDraft.trim();
     if (!body) return;
-    onStep10SurfaceAttempt?.("comments");
+    setCommentDraft("");
+    // The useCreateCommentMutation hook's onMutate optimistically
+    // prepends to the comments query cache, which flows back as a
+    // prop update — no local state needed.
+    onCreateComment?.(body);
+  }
+
+  // Phase 5 Step 10 — priority cycling. Each click advances to the
+  // next priority (Low → Medium → High → Urgent → None → Low…).
+  // The parent's `onPriorityChange` fires `PATCH /api/tasks/:id`
+  // with `{ priority }` and the board cache syncs optimistically.
+  const priorityCycle: TaskPriority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
+  function handlePriorityClick() {
+    const current = task?.priority ?? null;
+    const idx = current ? priorityCycle.indexOf(current as TaskPriority) : -1;
+    const next: TaskPriority | null =
+      idx < 0 ? "LOW" : idx < 3 ? priorityCycle[idx + 1]! : null;
+    onPriorityChange?.(next);
   }
 
   // ---- Derived values -------------------------------------------
@@ -788,6 +891,20 @@ export function TaskModal(props: TaskModalProps) {
                     >
                       {row.title}
                     </span>
+                    {onDeleteSubtask ? (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteSubtask(row.id)}
+                        aria-label={`Delete subtask "${row.title}"`}
+                        className="opacity-0 group-hover:opacity-100 w-4 h-4 rounded hover:bg-surface-container-highest text-outline hover:text-error flex items-center justify-center transition-colors shrink-0"
+                      >
+                        <Icon
+                          name="close"
+                          className="w-[12px] h-[12px]"
+                          style={{ width: 12, height: 12 }}
+                        />
+                      </button>
+                    ) : null}
                     {row.done ? (
                       <span className="font-label-mono-sm text-label-mono-sm text-outline opacity-0 group-hover:opacity-100 transition-opacity">
                         Done
@@ -938,6 +1055,7 @@ export function TaskModal(props: TaskModalProps) {
             <Field label="Priority">
               <button
                 type="button"
+                onClick={handlePriorityClick}
                 className={[
                   "w-full flex items-center justify-between px-space-sm py-1.5 rounded-lg cursor-pointer transition-colors group",
                   priority === "urgent"
@@ -1021,21 +1139,32 @@ export function TaskModal(props: TaskModalProps) {
               </ul>
             </Field>
 
-            {/* Move to column */}
+            {/* Move to column — Phase 5 Step 10 wired to the move
+             * endpoint. Shows a `<select>` of the board's columns
+             * (excluding the current one); selecting a column fires
+             * `onMoveTask(toColumnId)` which the parent wires to
+             * `POST /api/columns/:colId/tasks/:taskId/move`. */}
             <Field label="Move to Column">
-              <button
-                type="button"
-                className="w-full flex items-center justify-between bg-surface-container px-space-sm py-1.5 rounded-lg cursor-pointer hover:bg-surface-bright transition-colors group"
+              <select
+                aria-label="Move task to another column"
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val) onMoveTask?.(val);
+                  e.target.selectedIndex = 0;
+                }}
+                className="w-full appearance-none bg-surface-container px-space-sm py-1.5 rounded-lg cursor-pointer hover:bg-surface-bright transition-colors font-label-ui-md text-label-ui-md text-on-surface focus:outline-none"
               >
-                <span className="font-label-ui-md text-label-ui-md text-on-surface">
+                <option value="" disabled selected>
                   {statusLabel}
-                </span>
-                <Icon
-                  name="unfold_more"
-                  className="w-[16px] h-[16px] text-outline group-hover:text-on-surface"
-                  style={{ width: 16, height: 16 }}
-                />
-              </button>
+                </option>
+                {boardColumns
+                  .filter((c) => c.id !== task?.columnId)
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.title}
+                    </option>
+                  ))}
+              </select>
             </Field>
 
             {/* Due date */}

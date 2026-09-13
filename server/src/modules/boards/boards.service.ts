@@ -62,6 +62,14 @@ export interface BoardDetail {
       storyPoints: number | null;
       labels: string[];
       assignees: Array<{ userId: string; email: string }>;
+      subtasks: Array<{
+        id: string;
+        taskId: string;
+        title: string;
+        done: boolean;
+        position: number;
+        createdAt: Date;
+      }>;
     }>;
   }>;
   members: Array<{
@@ -260,6 +268,17 @@ export async function getBoardById(
               },
               orderBy: { userId: "asc" },
             },
+            subtasks: {
+              select: {
+                id: true,
+                taskId: true,
+                title: true,
+                done: true,
+                position: true,
+                createdAt: true,
+              },
+              orderBy: { position: "asc" },
+            },
           },
         },
       },
@@ -319,6 +338,7 @@ export async function getBoardById(
         userId: a.userId,
         email: a.user.email,
       })),
+      subtasks: task.subtasks,
     })),
   }));
 

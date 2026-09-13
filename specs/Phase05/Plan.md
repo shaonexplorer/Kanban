@@ -918,17 +918,17 @@ the easy mistakes (import order, unused vars, missing `await`).
 
 | #   | Task                                                                                                       | Estimated Effort | Status         |
 | --- | ---------------------------------------------------------------------------------------------------------- | ---------------- | -------------- |
-| 1   | Frontend responsive layout (Step 1)                                                                        | 180 min          | ⬜ Pending      |
-| 2   | Column counters + quick-add (Step 2)                                                                       | 90 min           | ⬜ Pending      |
-| 3   | Intentional motion language (Step 3)                                                                       | 60 min           | ⬜ Pending      |
-| 4   | Loading / error / empty states (Step 4)                                                                    | 90 min           | ⬜ Pending      |
-| 5   | Wire the Phase 5 overlays to real mutations (Step 5)                                                       | 240 min          | ⬜ Pending      |
-| 6   | Quick-add keyboard shortcut (Step 6 — base; stretch goals b/m are separate)                               | 60 min           | ⬜ Pending      |
-| 7   | Backend input-validation audit script (Step 7)                                                             | 60 min           | ⬜ Pending      |
-| 8   | Backend structured logging (Step 8)                                                                       | 90 min           | ⬜ Pending      |
+| 1   | Frontend responsive layout (Step 1)                                                                        | 180 min          | ✅ Done        |
+| 2   | Column counters + quick-add (Step 2)                                                                       | 90 min           | ✅ Done        |
+| 3   | Intentional motion language (Step 3)                                                                       | 60 min           | ✅ Done        |
+| 4   | Loading / error / empty states (Step 4)                                                                    | 90 min           | ✅ Done        |
+| 5   | Wire the Phase 5 overlays to real mutations (Step 5)                                                       | 240 min          | ✅ Done        |
+| 6   | Quick-add keyboard shortcut (Step 6 — base; stretch goals b/m are separate)                               | 60 min           | ✅ Done        |
+| 7   | Backend input-validation audit script (Step 7)                                                             | 60 min           | ✅ Done        |
+| 8   | Backend structured logging (Step 8)                                                                       | 90 min           | ✅ Done        |
 | 9   | Backend rate limiting on auth (Step 9)                                                                    | 60 min           | ✅ Done        |
 | 9a  | Board invitation inbox UI (Step 9a — recipient accept/decline; backend endpoints from Phase 2)             | 90 min           | ✅ Shipped      |
-| 10  | Backend schema additions for the Phase 5 UX (Step 10)                                                      | 120 min          | ⬜ Pending      |
+| 10  | Backend schema additions for the Phase 5 UX (Step 10)                                                      | 120 min          | ✅ Done        |
 | 11  | Backend `jest` suite (Step 11)                                                                             | 240 min          | ⬜ Pending      |
 | 12  | Frontend `vitest` suite (Step 12)                                                                          | 240 min          | ⬜ Pending      |
 | 13  | PowerShell Phase 5 e2e codifier (Step 13)                                                                  | 120 min          | ⬜ Pending      |

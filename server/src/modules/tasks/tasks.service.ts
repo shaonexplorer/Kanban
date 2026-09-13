@@ -62,6 +62,7 @@ export interface TaskItem {
   storyPoints: number | null;
   labels: string[];
   assignees: Array<{ userId: string; email: string }>;
+  subtasks: SubtaskItem[];
 }
 
 /** Shape of a single subtask in read / mutation responses. */
@@ -235,6 +236,7 @@ export async function createTask(
     storyPoints: task.storyPoints,
     labels: task.labels,
     assignees: task.assignees.map((a) => ({ userId: a.userId, email: a.user.email })),
+    subtasks: task.subtasks,
   };
 }
 
@@ -276,6 +278,7 @@ export async function listTasks(
     storyPoints: task.storyPoints,
     labels: task.labels,
     assignees: task.assignees.map((a) => ({ userId: a.userId, email: a.user.email })),
+    subtasks: task.subtasks,
   }));
 }
 
@@ -321,6 +324,7 @@ export async function getTask(
     storyPoints: task.storyPoints,
     labels: task.labels,
     assignees: assignees.map((a) => ({ userId: a.userId, email: a.user.email })),
+    subtasks: task.subtasks,
   };
 }
 
@@ -393,6 +397,7 @@ export async function updateTask(
     storyPoints: updated.storyPoints,
     labels: updated.labels,
     assignees: updated.assignees.map((a) => ({ userId: a.userId, email: a.user.email })),
+    subtasks: updated.subtasks,
   };
 }
 
@@ -590,6 +595,7 @@ export async function moveTask(
     storyPoints: moved.storyPoints,
     labels: moved.labels,
     assignees: moved.assignees.map((a) => ({ userId: a.userId, email: a.user.email })),
+    subtasks: moved.subtasks,
   };
 }
 

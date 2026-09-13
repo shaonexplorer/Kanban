@@ -31,6 +31,13 @@ import { useDeleteColumnMutation } from "./useDeleteColumnMutation";
 import { useUpdateTaskMutation } from "./useUpdateTaskMutation";
 import { useDeleteTaskMutation } from "./useDeleteTaskMutation";
 import { useCreateBoardMutation } from "./useCreateBoardMutation";
+import { useCreateSubtaskMutation } from "./useCreateSubtaskMutation";
+import { useUpdateSubtaskMutation } from "./useUpdateSubtaskMutation";
+import { useDeleteSubtaskMutation } from "./useDeleteSubtaskMutation";
+import { useCreateCommentMutation } from "./useCreateCommentMutation";
+import { useTaskCommentsQuery } from "./useTaskCommentsQuery";
+import { useSetAssigneesMutation } from "./useSetAssigneesMutation";
+import { useUpdateMemberRoleMutation } from "./useUpdateMemberRoleMutation";
 import { useInviteMemberMutation } from "./useInviteMemberMutation";
 import { useRemoveMemberMutation } from "./useRemoveMemberMutation";
 import { useUpdateBoardMutation } from "./useUpdateBoardMutation";
@@ -42,7 +49,14 @@ import {
 } from "./reorderBoard";
 import { Column } from "./Column";
 import { TaskCard } from "./TaskCard";
-import type { BoardDetail, Column as ColumnT, Task } from "./types";
+import type { UpdateTaskInput } from "./api";
+import type {
+  BoardDetail,
+  Column as ColumnT,
+  Task,
+  TaskPriority,
+  TaskComment,
+} from "./types";
 import { Sidebar } from "./components/Sidebar";
 import { SidebarOverlay } from "./components/SidebarOverlay";
 import { BoardHeader } from "./components/BoardHeader";
@@ -128,6 +142,13 @@ export default function BoardView({ boardId }: BoardViewProps) {
   // `["boards"]` list (the Sidebar / home page both consume
   // that list).
   const deleteBoardMutation = useDeleteBoardMutation();
+  // Phase 5 Step 10 — subtask / comment / metadata / role wiring
+  const createSubtask = useCreateSubtaskMutation(boardId);
+  const updateSubtask = useUpdateSubtaskMutation(boardId);
+  const deleteSubtask = useDeleteSubtaskMutation(boardId);
+  const createComment = useCreateCommentMutation();
+  const setAssignees = useSetAssigneesMutation(boardId);
+  const updateMemberRole = useUpdateMemberRoleMutation(boardId);
 
   // Phase 5 Step 1: tier detection via two media queries. The
   // canonical breakpoints match Tailwind v4 defaults (sm = 640px,
@@ -270,6 +291,10 @@ export default function BoardView({ boardId }: BoardViewProps) {
     closeTask,
     closeInvitationsInbox,
   } = overlay;
+
+  // Comments query — populated only when the TaskModal is open
+  // (selectedTaskId is null otherwise, so the query is disabled).
+  const { data: taskComments } = useTaskCommentsQuery(selectedTaskId);
 
   // Phase 5 Step 1: sidebar visibility. On compact/tablet the
   // drawer is closed by default; on desktop the visible sidebar
@@ -1219,6 +1244,30 @@ export default function BoardView({ boardId }: BoardViewProps) {
             // the toggle outside the modal can use it without a
             // signature change.
           }}
+          // Phase 5 Step 10 — member role change wired to the
+          // PATCH /api/boards/:id/members/:userId endpoint. The
+          // modal's per-row select fires this synchronously; the
+          // hook optimistically updates the board cache and
+          // invalidates on settle.
+          onChangeMemberRole={({ userId: targetUserId, role }) => {
+            updateMemberRole.mutate(
+              { userId: targetUserId, role: role === "Admin" ? "ADMIN" : "MEMBER" },
+              {
+                onError: () => {
+                  setToast({
+                    message: "Couldn't change role — please retry.",
+                    variant: "error",
+                  });
+                },
+                onSuccess: () => {
+                  setToast({
+                    message: "Member role updated.",
+                    variant: "success",
+                  });
+                },
+              },
+            );
+          }}
         />
       ) : null}
 
@@ -1339,12 +1388,118 @@ export default function BoardView({ boardId }: BoardViewProps) {
                 },
               );
             },
-            onStep10SurfaceAttempt: (surface) => {
-              setToast({
-                message: `${surface} support ships in Phase 5 Step 10.`,
-                variant: "info",
+            // Phase 5 Step 10 — wire each modal surface to its hook.
+            onStar: (next) => {
+              const col = findTaskColumn(board, selectedTaskId);
+              if (!col) return;
+              updateTask.mutate({
+                taskId: selectedTaskId,
+                columnId: col.id,
+                patch: { starred: next },
               });
             },
+            onCreateSubtask: (title) => {
+              createSubtask.mutate(
+                { taskId: selectedTaskId, title },
+                {
+                  onError: () => {
+                    setToast({
+                      message: "Couldn't add subtask — please retry.",
+                      variant: "error",
+                    });
+                  },
+                },
+              );
+            },
+            onUpdateSubtask: (subtaskId, patch) => {
+              updateSubtask.mutate(
+                { taskId: selectedTaskId, subtaskId, patch },
+                {
+                  onError: () => {
+                    setToast({
+                      message: "Couldn't update subtask — please retry.",
+                      variant: "error",
+                    });
+                  },
+                },
+              );
+            },
+            onDeleteSubtask: (subtaskId) => {
+              deleteSubtask.mutate(
+                { taskId: selectedTaskId, subtaskId },
+                {
+                  onError: () => {
+                    setToast({
+                      message: "Couldn't delete subtask — please retry.",
+                      variant: "error",
+                    });
+                  },
+                },
+              );
+            },
+            onCreateComment: (body) => {
+              createComment.mutate(
+                { taskId: selectedTaskId, body },
+                {
+                  onError: () => {
+                    setToast({
+                      message: "Couldn't post comment — please retry.",
+                      variant: "error",
+                    });
+                  },
+                },
+              );
+            },
+            onPriorityChange: (priority) => {
+              const col = findTaskColumn(board, selectedTaskId);
+              if (!col) return;
+              updateTask.mutate({
+                taskId: selectedTaskId,
+                columnId: col.id,
+                patch: { priority },
+              });
+            },
+            onMoveTask: (toColumnId) => {
+              const col = findTaskColumn(board, selectedTaskId);
+              if (!col) return;
+              moveTask.mutate(
+                {
+                  taskId: selectedTaskId,
+                  sourceColumnId: col.id,
+                  toColumnId,
+                  toIndex: 0,
+                },
+                {
+                  onSuccess: () => {
+                    setToast({
+                      message: "Task moved.",
+                      variant: "success",
+                    });
+                  },
+                  onError: () => {
+                    setToast({
+                      message: "Couldn't move task — please retry.",
+                      variant: "error",
+                    });
+                  },
+                },
+              );
+            },
+            onSetAssignees: (userIds) => {
+              setAssignees.mutate(
+                { taskId: selectedTaskId, userIds },
+                {
+                  onError: () => {
+                    setToast({
+                      message: "Couldn't update assignees — please retry.",
+                      variant: "error",
+                    });
+                  },
+                },
+              );
+            },
+            currentUserId: userId ?? null,
+            taskComments,
           })
         : null}
 
@@ -1406,6 +1561,88 @@ export default function BoardView({ boardId }: BoardViewProps) {
 }
 
 /**
+ * Derive a display name from an email address — the API doesn't
+ * carry a `displayName` yet, so we use the local part of the email
+ * with the first letter uppercased and dots / underscores expanded
+ * to spaces (e.g. `sarah.kowalski` → "Sarah Kowalski").
+ */
+function nameFromEmail(email: string): string {
+  const local = email.split("@")[0] ?? email;
+  const spaced = local.replace(/[._-]+/g, " ").trim();
+  return spaced
+    .split(/\s+/)
+    .map((w) => (w[0] ?? "").toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+/** Derive 1–2 initials from an email address. */
+function initialsFromEmail(email: string): string {
+  const local = email.split("@")[0] ?? email;
+  const parts = local.split(/[._-]+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) {
+    return (parts[0]!.slice(0, 2) ?? "?").toUpperCase();
+  }
+  return (parts[0]!.slice(0, 1) + parts[parts.length - 1]!.slice(0, 1)).toUpperCase();
+}
+
+/** Convert a server `TaskPriority` to a lowercase display token. */
+function priorityToLower(
+  p: TaskPriority | null | undefined,
+): "urgent" | "high" | "medium" | "low" | null {
+  if (!p) return null;
+  return p.toLowerCase() as "urgent" | "high" | "medium" | "low";
+}
+
+/** Convert a server `TaskPriority` to a human label. */
+function priorityLabel(p: TaskPriority | null | undefined): string {
+  if (!p) return "None";
+  return {
+    LOW: "Low",
+    MEDIUM: "Medium",
+    HIGH: "High",
+    URGENT: "Urgent",
+  }[p];
+}
+
+/** Format an ISO date string as a human-readable date label, or null. */
+function formatDateLabel(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+/** Approximate "posted ago" string for comment timestamps. */
+function formatTimeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return "Just now";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  return `${day}d ago`;
+}
+
+/**
+ * Find the column that currently contains a task in the board cache.
+ * Used by the TaskModal's Step 10 callbacks (star, priority, move)
+ * to locate the task's `columnId` for the PATCH / move payload.
+ */
+function findTaskColumn(board: BoardDetail, taskId: string): ColumnT | null {
+  for (const col of board.columns) {
+    if (col.tasks.some((t) => t.id === taskId)) {
+      return col;
+    }
+  }
+  return null;
+}
+
+/**
  * Tiny adapter that looks the selected task up in the cached
  * `board` and renders the `TaskModal` with the right props. Lives
  * as a `useMemo`-cached helper at the bottom of the file so
@@ -1413,21 +1650,55 @@ export default function BoardView({ boardId }: BoardViewProps) {
  * check prevents a stale `selectedTaskId` from a different board
  * (e.g. after a navigation) from rendering against the wrong
  * `board`'s cache.
+ *
+ * Phase 5 Step 10 — all display props are derived from the
+ * widened `Task` shape (starred, priority, dueDate, storyPoints,
+ * labels, assignees, subtasks). The new callback props wire the
+ * modal's interactive surfaces to the dedicated mutation hooks.
  */
 function renderTaskModal(args: {
   board: BoardDetail;
   taskId: string;
   expectedBoardId: string;
+  currentUserId: string | null;
+  taskComments: TaskComment[] | undefined;
   onClose: () => void;
   onUpdateTask: (a: {
     taskId: string;
     columnId: string;
-    patch: { title?: string; description?: string | null };
+    patch: UpdateTaskInput;
   }) => void;
   onDeleteTask: (task: Task) => void;
-  onStep10SurfaceAttempt: (surface: string) => void;
+  onStar: (starred: boolean) => void;
+  onCreateSubtask: (title: string) => void;
+  onUpdateSubtask: (
+    subtaskId: string,
+    patch: { title?: string; done?: boolean },
+  ) => void;
+  onDeleteSubtask: (subtaskId: string) => void;
+  onCreateComment: (body: string) => void;
+  onPriorityChange: (priority: TaskPriority | null) => void;
+  onMoveTask: (toColumnId: string) => void;
+  onSetAssignees: (userIds: string[]) => void;
 }): React.ReactNode {
-  const { board, taskId, expectedBoardId, onClose, onUpdateTask, onDeleteTask, onStep10SurfaceAttempt } = args;
+  const {
+    board,
+    taskId,
+    expectedBoardId,
+    currentUserId,
+    taskComments,
+    onClose,
+    onUpdateTask,
+    onDeleteTask,
+    onStar,
+    onCreateSubtask,
+    onUpdateSubtask,
+    onDeleteSubtask,
+    onCreateComment,
+    onPriorityChange,
+    onMoveTask,
+    onSetAssignees,
+  } = args;
   if (board.id !== expectedBoardId) return null;
   // Find the task + its column.
   let foundTask: Task | null = null;
@@ -1442,14 +1713,50 @@ function renderTaskModal(args: {
   }
   if (!foundTask || !foundColumn) return null;
 
-  // The modal's `statusToken` / `statusLabel` are derived from the
-  // column (the wire Task shape doesn't carry a status field —
-  // the column title is the closest analogue). The other
-  // metadata fields (priority, story points, due date, labels,
-  // assignees) are sentinels until Step 10 widens the Task
-  // model.
+  // Derive display props from the widened Task shape.
+  const priorityLower = priorityToLower(foundTask.priority);
+  const priorityLbl = priorityLabel(foundTask.priority);
+  const dueDateLbl = formatDateLabel(foundTask.dueDate);
+  const storyPts = foundTask.storyPoints ?? 0;
+
+  const modalAssignees = foundTask.assignees.map((a) => ({
+    id: a.userId,
+    name: nameFromEmail(a.email),
+    initials: initialsFromEmail(a.email),
+  }));
+
+  const modalLabels = foundTask.labels.map((l) => ({
+    id: l,
+    name: l,
+    token: "outline" as const,
+  }));
+
+  const modalSubtasks = foundTask.subtasks.map((s) => ({
+    id: s.id,
+    title: s.title,
+    done: s.done,
+  }));
+
+  const modalComments = (taskComments ?? []).map((c) => ({
+    id: c.id,
+    author: c.author.email,
+    initials: initialsFromEmail(c.author.email),
+    body: c.body,
+    postedAgo: formatTimeAgo(c.createdAt),
+    isYou: c.author.id === currentUserId,
+  }));
+
+  const boardColumns = board.columns.map((c) => ({
+    id: c.id,
+    title: c.title,
+  }));
+
   return (
     <TaskModal
+      // Re-mount when the task changes so local state re-syncs from
+      // the current task data (per CLAUDE.md — the project's ESLint
+      // rejects setState-in-effect).
+      key={foundTask.id}
       open
       onClose={onClose}
       boardTitle={board.title}
@@ -1459,20 +1766,29 @@ function renderTaskModal(args: {
       description={foundTask.description ?? ""}
       statusToken="primary"
       statusLabel={foundColumn.title}
-      priority="medium"
-      priorityLabel="Medium"
-      storyPoints={0}
-      dueDateLabel={null}
-      assignees={[]}
-      labels={[]}
+      priority={priorityLower}
+      priorityLabel={priorityLbl}
+      storyPoints={storyPts}
+      dueDateLabel={dueDateLbl}
+      assignees={modalAssignees}
+      labels={modalLabels}
       createdAt={foundTask.createdAt}
       updatedAt={foundTask.createdAt}
-      subtasks={[]}
-      comments={[]}
+      subtasks={modalSubtasks}
+      comments={modalComments}
       task={foundTask}
       onUpdateTask={onUpdateTask}
       onDeleteTask={onDeleteTask}
-      onStep10SurfaceAttempt={onStep10SurfaceAttempt}
+      // Phase 5 Step 10 callbacks
+      onStar={onStar}
+      onCreateSubtask={onCreateSubtask}
+      onUpdateSubtask={onUpdateSubtask}
+      onDeleteSubtask={onDeleteSubtask}
+      onCreateComment={onCreateComment}
+      onPriorityChange={onPriorityChange}
+      onMoveTask={onMoveTask}
+      onSetAssignees={onSetAssignees}
+      boardColumns={boardColumns}
     />
   );
 }

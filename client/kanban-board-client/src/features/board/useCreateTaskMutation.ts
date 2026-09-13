@@ -65,6 +65,14 @@ export function useCreateTaskMutation(
           position: 0,
           columnId,
           createdAt: new Date().toISOString(),
+          // Phase 5 Step 10 — default values for the widened Task shape.
+          starred: false,
+          priority: null,
+          dueDate: null,
+          storyPoints: null,
+          labels: [],
+          assignees: [],
+          subtasks: [],
         };
         const optimistic: BoardDetail = {
           ...previous,

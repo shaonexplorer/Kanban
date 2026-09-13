@@ -252,7 +252,13 @@ export function Sidebar({ collapsed = false }: SidebarProps = {}) {
                               ? "text-on-surface-variant"
                               : "text-outline group-hover:text-on-surface-variant"
                           }`}
-                          title={b.role === "OWNER" ? "Owner" : "Member"}
+                          title={
+                            b.role === "OWNER"
+                              ? "Owner"
+                              : b.role === "ADMIN"
+                                ? "Admin"
+                                : "Member"
+                          }
                         >
                           {count}
                         </span>

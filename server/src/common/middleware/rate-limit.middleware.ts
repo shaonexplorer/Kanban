@@ -22,7 +22,7 @@ function tooManyRequests(_req: Request, res: Response): void {
  */
 export const loginRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 10,
+  limit: process.env.RATE_LIMIT_DISABLED === "1" ? 100000 : 10,
   handler: tooManyRequests,
   // Express 4/5 send `RateLimit-Remaining`, `RateLimit-Limit`, and
   // `RateLimit-Reset` (draft-6). Useful for clients that want to back
@@ -48,7 +48,7 @@ export const loginRateLimiter = rateLimit({
  */
 export const registerRateLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
-  limit: 5,
+  limit: process.env.RATE_LIMIT_DISABLED === "1" ? 100000 : 5,
   handler: tooManyRequests,
   standardHeaders: "draft-6",
   legacyHeaders: false,
