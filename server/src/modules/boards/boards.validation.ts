@@ -149,3 +149,13 @@ export const InviteMemberSchema = z
     { message: "Provide exactly one of `userId` or `email`" }
   );
 export type InviteMemberInput = z.infer<typeof InviteMemberSchema>;
+
+/**
+ * Phase 5 Step 10 — body for `PATCH /api/boards/:id/members/:userId`.
+ * Changes a member's non-owner role. `OWNER` is immutable — attempting
+ * to change the board owner's role returns 400.
+ */
+export const UpdateMemberRoleSchema = z.object({
+  role: z.enum(["ADMIN", "MEMBER"]),
+});
+export type UpdateMemberRoleInput = z.infer<typeof UpdateMemberRoleSchema>;

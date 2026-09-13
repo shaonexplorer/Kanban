@@ -8,6 +8,45 @@
  * unsanitised cache data.
  */
 
+// ---------------------------------------------------------------------------
+// Phase 5 Step 10 — enums mirrored from the Prisma schema so the
+// client doesn't need to import the generated Prisma client.
+// ---------------------------------------------------------------------------
+
+export type TaskPriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+export type BoardRole = "OWNER" | "ADMIN" | "MEMBER";
+
+// ---------------------------------------------------------------------------
+// Core entities
+// ---------------------------------------------------------------------------
+
+export interface TaskAssignee {
+  userId: string;
+  email: string;
+}
+
+export interface TaskSubtask {
+  id: string;
+  taskId: string;
+  title: string;
+  done: boolean;
+  position: number;
+  createdAt: string;
+}
+
+export interface TaskCommentAuthor {
+  id: string;
+  email: string;
+}
+
+export interface TaskComment {
+  id: string;
+  taskId: string;
+  body: string;
+  createdAt: string;
+  author: TaskCommentAuthor;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -15,6 +54,14 @@ export interface Task {
   position: number;
   columnId: string;
   createdAt: string;
+  // Phase 5 Step 10 — modal chrome fields
+  starred: boolean;
+  priority: TaskPriority | null;
+  dueDate: string | null;
+  storyPoints: number | null;
+  labels: string[];
+  assignees: TaskAssignee[];
+  subtasks: TaskSubtask[];
 }
 
 export interface Column {
@@ -27,7 +74,7 @@ export interface Column {
 export interface BoardMember {
   userId: string;
   email: string;
-  role: "OWNER" | "MEMBER";
+  role: BoardRole;
   joinedAt: string;
 }
 

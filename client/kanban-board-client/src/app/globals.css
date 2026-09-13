@@ -28,21 +28,42 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* The Stitch HTML hides the webkit scrollbar globally to keep the
- * kanban surface visually flat. Phase 4 already hid it; the new
- * scoped-to-boards rule keeps it hidden on the board route.
+/* Global scrollbar — the Kinetic Grid design applied to every scrollable
+ * surface. This replaces the old per-component .board-scroll / .kanban-scroll
+ * / .modal-scroll classes (which all carried the same styling) with a single
+ * source of truth.
+ *
+ * - 8px width: a lighter touch than the old 10px; consistent across all
+ *   surfaces, including card surfaces like TaskModal.
+ * - Thumb: --color-surface-container-high, with a hover-lift to
+ *   --color-outline-variant so it surfaces on demand.
+ * - Track: transparent (the surface behind shows through).
+ * - Motion: --duration-fast / --ease-standard transition on the thumb.
+ *
+ * WebKit (Chrome/Safari/Edge): styled via ::-webkit-scrollbar pseudo-elements.
+ * Firefox: scrollbar-width / scrollbar-color on the element itself.
+ *
+ * The old `.board-scroll` / `.kanban-scroll` rules lived behind a comment
+ * claiming the Stitch HTML "hides the webkit scrollbar globally" — but the
+ * scoped rules below never matched the modal or textarea surfaces, so those
+ * fell back to the browser default. This global rule closes that gap.
  */
-.board-scroll::-webkit-scrollbar,
-.kanban-scroll::-webkit-scrollbar {
-  height: 10px;
-  width: 10px;
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-surface-container-high) transparent;
 }
-.board-scroll::-webkit-scrollbar-thumb,
-.kanban-scroll::-webkit-scrollbar-thumb {
+::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+::-webkit-scrollbar-thumb {
   background: var(--color-surface-container-high);
   border-radius: 9999px;
+  transition: background-color var(--duration-fast) var(--ease-standard);
 }
-.board-scroll::-webkit-scrollbar-track,
-.kanban-scroll::-webkit-scrollbar-track {
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-outline-variant);
+}
+::-webkit-scrollbar-track {
   background: transparent;
 }

@@ -1,9 +1,11 @@
 import { HttpError } from "../../common/errors/HttpError.js";
 import { prisma } from "../../lib/prisma.js";
+import type { BoardRole, ColorIdentity, TaskPriority, Template } from "../../generated/prisma/client.js";
 import type {
   CreateBoardInput,
   InviteMemberInput,
   UpdateBoardInput,
+  UpdateMemberRoleInput,
 } from "./boards.validation.js";
 
 /**
@@ -14,6 +16,15 @@ import type {
  *
  * The two `assertBoard*` helpers are also re-exported for use in other
  * modules (e.g. column/task controllers in Phase 3).
+ *
+ * Phase 5 Step 10 widens the surface with:
+ *  - `Board.listMyBoards` + `Board.getBoardById` + `Board.listMembers`:
+ *    `role` is now a `BoardRole` enum (OWNER / ADMIN / MEMBER) instead
+ *    of a free-form string literal.
+ *  - `Board.createBoard`: persists `projectKey`, `colorIdentity`, `template`.
+ *  - `Board.updateBoard`: persists `linkSharing`.
+ *  - `Board.getBoardById`: nested tasks include the new Step 10 fields.
+ *  - `Board.updateMemberRole`: new — changes a member's non-owner role.
  */
 
 // ---------------------------------------------------------------------------
@@ -25,7 +36,7 @@ import type {
 export interface BoardListItem {
   id: string;
   title: string;
-  role: "OWNER" | "MEMBER";
+  role: BoardRole;
   createdAt: Date;
 }
 
@@ -45,12 +56,26 @@ export interface BoardDetail {
       description: string | null;
       position: number;
       createdAt: Date;
+      starred: boolean;
+      priority: TaskPriority | null;
+      dueDate: Date | null;
+      storyPoints: number | null;
+      labels: string[];
+      assignees: Array<{ userId: string; email: string }>;
+      subtasks: Array<{
+        id: string;
+        taskId: string;
+        title: string;
+        done: boolean;
+        position: number;
+        createdAt: Date;
+      }>;
     }>;
   }>;
   members: Array<{
     userId: string;
     email: string;
-    role: "OWNER" | "MEMBER";
+    role: BoardRole;
     joinedAt: Date;
   }>;
 }
@@ -59,7 +84,7 @@ export interface BoardDetail {
 export interface BoardMemberItem {
   userId: string;
   email: string;
-  role: "OWNER" | "MEMBER";
+  role: BoardRole;
   joinedAt: Date;
 }
 
@@ -127,25 +152,31 @@ export { assertBoardAccess, assertBoardOwner, loadActiveBoard };
 /**
  * Create a new board owned by `ownerId`.
  *
- * Phase 5 Step 5 widens the input shape to accept the new optional
- * `projectKey`, `colorIdentity`, and `template` fields (so the
- * `CreateBoardDrawer` can round-trip its full Stitch-faithful form).
- * The corresponding Prisma columns ship with the Step 10
- * `phase05_polish` migration. The schema is unchanged in this
- * pass, so the service **does not** forward these fields to
- * `prisma.board.create` — Prisma 7's typed client rejects unknown
- * fields at runtime. The `CreateBoardInput` type is the wire
- * contract; the database persistence is a Step 10 deliverable.
+ * Phase 5 Step 10 persists the optional `projectKey`, `colorIdentity`,
+ * and `template` fields (which were accepted on the wire since Step 5
+ * but dropped at the Prisma write until now).
  */
 export async function createBoard(
   ownerId: string,
   input: CreateBoardInput
 ): Promise<{ id: string; title: string; ownerId: string; createdAt: Date }> {
+  type CreateBoardData = {
+    title: string;
+    ownerId: string;
+    projectKey?: string;
+    colorIdentity?: ColorIdentity;
+    template?: Template;
+  };
+  const data: CreateBoardData = { title: input.title, ownerId };
+  if (input.projectKey !== undefined) {
+    // Defensive upper-case — the schema already enforces A-Z / 0-9 only.
+    data.projectKey = input.projectKey.toUpperCase();
+  }
+  if (input.colorIdentity !== undefined) data.colorIdentity = input.colorIdentity;
+  if (input.template !== undefined) data.template = input.template;
+
   const board = await prisma.board.create({
-    data: {
-      title: input.title,
-      ownerId,
-    },
+    data,
     select: {
       id: true,
       title: true,
@@ -174,18 +205,20 @@ export async function listMyBoards(userId: string): Promise<BoardListItem[]> {
     }),
     prisma.boardUser.findMany({
       where: { userId, board: { deletedAt: null } },
-      select: { board: { select: { id: true, title: true, createdAt: true } } },
+      select: {
+        role: true,
+        board: { select: { id: true, title: true, createdAt: true } },
+      },
       orderBy: { joinedAt: "desc" },
     }),
   ]);
 
   const items: BoardListItem[] = [
-    ...owned.map((b) => ({ ...b, role: "OWNER" as const })),
+    ...owned.map((b) => ({ ...b, role: "OWNER" as BoardRole })),
     ...memberships
-      .map((m) => m.board)
+      .map((m) => ({ ...m.board, role: m.role as BoardRole }))
       // Defensive de-dup in case a user is somehow both owner and member.
-      .filter((b) => !owned.some((o) => o.id === b.id))
-      .map((b) => ({ ...b, role: "MEMBER" as const })),
+      .filter((b) => !owned.some((o) => o.id === b.id)),
   ];
 
   return items;
@@ -195,6 +228,10 @@ export async function listMyBoards(userId: string): Promise<BoardListItem[]> {
  * Fetch a single board with its columns/tasks and members, then assert the
  * caller has access. Returns the nested response shape documented in
  * Requirements §2.3.
+ *
+ * Phase 5 Step 10: nested tasks include the new fields
+ * (starred, priority, dueDate, storyPoints, labels, assignees);
+ * member roles are the `BoardRole` enum (OWNER / ADMIN / MEMBER).
  */
 export async function getBoardById(
   userId: string,
@@ -219,6 +256,29 @@ export async function getBoardById(
             description: true,
             position: true,
             createdAt: true,
+            starred: true,
+            priority: true,
+            dueDate: true,
+            storyPoints: true,
+            labels: true,
+            assignees: {
+              select: {
+                userId: true,
+                user: { select: { email: true } },
+              },
+              orderBy: { userId: "asc" },
+            },
+            subtasks: {
+              select: {
+                id: true,
+                taskId: true,
+                title: true,
+                done: true,
+                position: true,
+                createdAt: true,
+              },
+              orderBy: { position: "asc" },
+            },
           },
         },
       },
@@ -233,6 +293,7 @@ export async function getBoardById(
       orderBy: { joinedAt: "desc" },
       select: {
         joinedAt: true,
+        role: true,
         user: { select: { id: true, email: true } },
       },
     }),
@@ -249,33 +310,53 @@ export async function getBoardById(
     ...memberships.map((m) => ({
       userId: m.user.id,
       email: m.user.email,
-      role: "MEMBER" as const,
+      role: m.role as BoardRole,
       joinedAt: m.joinedAt,
     })),
   ];
+
+  // Flatten the nested `assignees[].user.email` into `assignees[].email`
+  // so the wire shape matches the `BoardDetail` contract. The Prisma
+  // select traverses the `user` relation to get the email; we inline
+  // it into the assignee object for a clean API response.
+  const flatColumns = columns.map((col) => ({
+    id: col.id,
+    title: col.title,
+    position: col.position,
+    tasks: col.tasks.map((task) => ({
+      id: task.id,
+      title: task.title,
+      description: task.description,
+      position: task.position,
+      createdAt: task.createdAt,
+      starred: task.starred,
+      priority: task.priority,
+      dueDate: task.dueDate,
+      storyPoints: task.storyPoints,
+      labels: task.labels,
+      assignees: task.assignees.map((a) => ({
+        userId: a.userId,
+        email: a.user.email,
+      })),
+      subtasks: task.subtasks,
+    })),
+  }));
 
   return {
     id: board.id,
     title: board.title,
     ownerId: board.ownerId,
     createdAt: board.createdAt,
-    columns,
+    columns: flatColumns,
     members: memberList,
   };
 }
 
 /**
- * Update the board's title and / or link-sharing setting. Owner only.
+ * Update the board's title and/or link-sharing setting. Owner only.
  *
- * Phase 5 Step 5 widens the input shape to accept the optional
- * `linkSharing` field (the share-modal "Anyone with the link can
- * view" toggle). The Prisma column ships with the Step 10
- * `phase05_polish` migration. The schema is unchanged in this
- * pass, so the service **does not** forward the `linkSharing`
- * field to `prisma.board.update` — Prisma 7's typed client
- * rejects unknown fields at runtime. The `UpdateBoardInput`
- * type is the wire contract; the database persistence is a
- * Step 10 deliverable.
+ * Phase 5 Step 10 persists `linkSharing` (previously accepted on the wire
+ * but dropped at the Prisma write).
  */
 export async function updateBoard(
   userId: string,
@@ -287,10 +368,14 @@ export async function updateBoard(
 
   // Build the patch from defined keys only — never pass `undefined`
   // through to Prisma's `data` (which would otherwise overwrite the
-  // column with NULL). The `linkSharing` field is intentionally
-  // excluded from the Prisma write until Step 10.
-  const data: { title?: string } = {};
+  // column with NULL).
+  type UpdateBoardData = {
+    title?: string;
+    linkSharing?: "DISABLED" | "VIEW";
+  };
+  const data: UpdateBoardData = {};
   if (input.title !== undefined) data.title = input.title;
+  if (input.linkSharing !== undefined) data.linkSharing = input.linkSharing;
 
   const updated = await prisma.board.update({
     where: { id: boardId },
@@ -325,6 +410,8 @@ export async function softDeleteBoard(
 /**
  * List the members of a board, owner first with `joinedAt = board.createdAt`,
  * then accepted collaborators newest-first by `joinedAt`.
+ *
+ * Phase 5 Step 10: member roles are the `BoardRole` enum.
  */
 export async function listMembers(
   userId: string,
@@ -343,6 +430,7 @@ export async function listMembers(
       orderBy: { joinedAt: "desc" },
       select: {
         joinedAt: true,
+        role: true,
         user: { select: { id: true, email: true } },
       },
     }),
@@ -358,7 +446,7 @@ export async function listMembers(
     ...memberships.map((m) => ({
       userId: m.user.id,
       email: m.user.email,
-      role: "MEMBER" as const,
+      role: m.role as BoardRole,
       joinedAt: m.joinedAt,
     })),
   ];
@@ -435,6 +523,12 @@ export async function inviteMember(
     throw new HttpError(409, "A pending invitation already exists");
   }
 
+  // Phase 5 Step 10: the optional `role` field is accepted on the wire so
+  // the ShareBoardModal's role select can ship unchanged. It is not
+  // persisted on `BoardInvitation` (no column — see schema); instead the
+  // role defaults to `MEMBER` at the DB layer when the invitee accepts and
+  // becomes a `BoardUser`. Promoting a member to ADMIN is handled by
+  // `PATCH /api/boards/:id/members/:userId` after they've joined.
   const invitation = await prisma.boardInvitation.create({
     data: {
       boardId,
@@ -492,4 +586,67 @@ export async function removeMember(
     }
     throw err;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 Step 10 — member role change
+// ---------------------------------------------------------------------------
+
+/**
+ * Change a member's non-owner role. Owner only.
+ *
+ * Rules:
+ *  - OWNER rows are immutable (the owner IS the board's `ownerId`).
+ *    Attempting to change the owner's role returns 400.
+ *  - Only ADMIN or MEMBER can be set (OWNER is reserved).
+ *  - The target user must be a current member of the board.
+ *
+ * @returns The updated member item with the new role.
+ */
+export async function updateMemberRole(
+  userId: string,
+  boardId: string,
+  targetUserId: string,
+  input: UpdateMemberRoleInput
+): Promise<BoardMemberItem> {
+  const board = await loadActiveBoard(boardId);
+  assertBoardOwner(userId, board);
+
+  // The board owner cannot have their role changed.
+  if (targetUserId === board.ownerId) {
+    throw new HttpError(400, "Cannot change the owner's role");
+  }
+
+  // Find the target member row.
+  const membership = await prisma.boardUser.findUnique({
+    where: { boardId_userId: { boardId, userId: targetUserId } },
+    select: { id: true, role: true, joinedAt: true, user: { select: { email: true } } },
+  });
+  if (!membership) {
+    throw new HttpError(404, "Member not found");
+  }
+
+  // The existing role is OWNER (shouldn't happen given the check above, but
+  // belt-and-suspenders).
+  if (membership.role === "OWNER") {
+    throw new HttpError(400, "Cannot change the owner's role");
+  }
+
+  // Apply the new role.
+  const updated = await prisma.boardUser.update({
+    where: { boardId_userId: { boardId, userId: targetUserId } },
+    data: { role: input.role },
+    select: {
+      role: true,
+      joinedAt: true,
+      user: { select: { id: true, email: true } },
+    },
+  });
+
+  return {
+    userId: targetUserId,
+    email: updated.user.email,
+    role: updated.role as BoardRole,
+    joinedAt: updated.joinedAt,
+  };
 }

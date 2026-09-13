@@ -112,7 +112,7 @@ export function BoardControlBar({
               <span className="hidden md:inline">Manage Access</span>
             </button>
 
-            {newTaskOpen ? (
+            {/* {newTaskOpen ? (
               <div className="flex items-center gap-space-xs bg-surface-container-high rounded-lg p-1 shadow-md">
                 <input
                   autoFocus
@@ -160,7 +160,7 @@ export function BoardControlBar({
                 <Icon name="add" className="w-5 h-5" />
                 <span>New Task</span>
               </button>
-            )}
+            )} */}
           </div>
         </div>
       </div>

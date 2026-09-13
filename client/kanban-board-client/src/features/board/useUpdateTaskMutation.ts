@@ -29,43 +29,28 @@ export interface UpdateTaskContext {
 /**
  * `PATCH /api/tasks/:id` with a partial body.
  *
- * Phase 5 Plan §5.1 — the TaskModal's title / description edits,
- * the star toggle, and any future field edits (priority / due
- * date / labels — those land in Step 10) all flow through this
- * hook. The autosave footer of the TaskModal debounces title
- * typing at the call site (600ms) and calls this hook with the
- * trimmed value.
+ * Phase 5 Step 10 wires the TaskModal's star toggle, priority /
+ * due-date / labels / story-points edits, and metadata-sidebar
+ * changes through this hook — all via `patch: { field: value }`.
+ * The optimistic update applies every supplied field into the
+ * matching task in the board cache; `onSuccess` swaps the
+ * optimistic task for the server's authoritative shape.
  *
  * Optimistic update flow (mirrors `useCreateTaskMutation`):
  *  - `onMutate` cancels in-flight refetches, snapshots the current
  *    `["board", id]` cache value, and writes the patch into the
  *    matching column's task so the UI reflects the change
  *    immediately.
- *  - `onSuccess` swaps the optimistic task for the server's
- *    authoritative shape (so the real `updatedAt` / any
- *    server-side normalization lands in the cache without a
- *    refetch).
+ *  - `onSuccess` replaces the optimistic task in the cache with the
+ *    server's authoritative shape (so the real `updatedAt` / any
+ *    server-side normalization lands in the cache without a refetch).
  *  - `onError` restores the snapshot.
  *  - `onSettled` invalidates the query so any drift between the
  *    server and the optimistic shape is reconciled.
- *
- * The `BoardDetail` shape currently returned by `GET /api/boards/:id`
- * doesn't include the new Phase 5 fields (starred, priority, …) —
- * Step 10 widens the select. Until then, a star toggle will be
- * optimistically visible in the cache (because we write the patch
- * directly) but a refetch would clobber it; this is the documented
- * Step 5 limitation, and the existing `onSettled.invalidateQueries`
- * is the safety net that picks up the server state once the column
- * lands in the response shape.
  */
 export function useUpdateTaskMutation(
   boardId: string,
-): UseMutationResult<
-  Task,
-  Error,
-  UpdateTaskVariables,
-  UpdateTaskContext
-> {
+): UseMutationResult<Task, Error, UpdateTaskVariables, UpdateTaskContext> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ taskId, patch }) => updateTask(taskId, patch),
@@ -84,12 +69,17 @@ export function useUpdateTaskMutation(
                 t.id === taskId
                   ? {
                       ...t,
-                      ...(patch.title !== undefined
-                        ? { title: patch.title }
-                        : {}),
+                      ...(patch.title !== undefined ? { title: patch.title } : {}),
                       ...(patch.description !== undefined
                         ? { description: patch.description }
                         : {}),
+                      ...(patch.starred !== undefined ? { starred: patch.starred } : {}),
+                      ...(patch.priority !== undefined ? { priority: patch.priority } : {}),
+                      ...(patch.dueDate !== undefined ? { dueDate: patch.dueDate } : {}),
+                      ...(patch.storyPoints !== undefined
+                        ? { storyPoints: patch.storyPoints }
+                        : {}),
+                      ...(patch.labels !== undefined ? { labels: patch.labels } : {}),
                     }
                   : t,
               ),

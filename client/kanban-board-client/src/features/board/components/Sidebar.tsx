@@ -136,7 +136,7 @@ export function Sidebar({ collapsed = false }: SidebarProps = {}) {
           </div>
         </div> */}
 
-        <div className="flex-1 overflow-y-auto board-scroll px-space-md py-space-sm space-y-space-md">
+        <div className="flex-1 overflow-y-auto px-space-md py-space-sm space-y-space-md">
           {/* Primary nav */}
           <nav className="space-y-space-2xs">
             {primaryNav.map((item) => {
@@ -252,7 +252,13 @@ export function Sidebar({ collapsed = false }: SidebarProps = {}) {
                               ? "text-on-surface-variant"
                               : "text-outline group-hover:text-on-surface-variant"
                           }`}
-                          title={b.role === "OWNER" ? "Owner" : "Member"}
+                          title={
+                            b.role === "OWNER"
+                              ? "Owner"
+                              : b.role === "ADMIN"
+                                ? "Admin"
+                                : "Member"
+                          }
                         >
                           {count}
                         </span>

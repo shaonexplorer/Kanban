@@ -5,6 +5,7 @@ import type {
   InviteMemberInput,
   MemberParams,
   UpdateBoardInput,
+  UpdateMemberRoleInput,
 } from "./boards.validation.js";
 
 /**
@@ -59,6 +60,7 @@ export async function getBoard(req: Request, res: Response): Promise<void> {
 
 /**
  * PATCH /api/boards/:id — rename a board (owner only).
+ * Phase 5 Step 10 also accepts `linkSharing`.
  * Returns 200 with the updated board.
  */
 export async function updateBoard(req: Request, res: Response): Promise<void> {
@@ -85,6 +87,7 @@ export async function deleteBoard(req: Request, res: Response): Promise<void> {
 /**
  * GET /api/boards/:id/members — list members (owner + accepted collaborators).
  * Returns 200 with an array of `{ userId, email, role, joinedAt }`.
+ * Phase 5 Step 10: `role` is the `BoardRole` enum (OWNER / ADMIN / MEMBER).
  */
 export async function listMembers(
   req: Request,
@@ -97,6 +100,7 @@ export async function listMembers(
 
 /**
  * POST /api/boards/:id/members — invite a registered user to collaborate.
+ * Phase 5 Step 10: optional `role` field can be ADMIN (defaults to MEMBER).
  * Returns 201 with the created PENDING invitation.
  */
 export async function inviteMember(
@@ -125,4 +129,29 @@ export async function removeMember(
   const { userId: targetUserId } = req.params as MemberParams;
   await boardsService.removeMember(userId, req.board!.id, targetUserId);
   res.status(204).send();
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 Step 10 — member role change
+// ---------------------------------------------------------------------------
+
+/**
+ * PATCH /api/boards/:id/members/:userId — change a member's non-owner role.
+ * Owner only. Returns 200 with the updated member
+ * (`{ userId, email, role, joinedAt }`).
+ */
+export async function updateMemberRole(
+  req: Request,
+  res: Response
+): Promise<void> {
+  const { id: userId } = req.user!;
+  const { userId: targetUserId } = req.params as MemberParams;
+  const input = req.body as UpdateMemberRoleInput;
+  const member = await boardsService.updateMemberRole(
+    userId,
+    req.board!.id,
+    targetUserId,
+    input
+  );
+  res.status(200).json(member);
 }

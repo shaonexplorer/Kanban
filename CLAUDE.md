@@ -17,10 +17,10 @@ Mini Kanban Board/
 ## Tech Stack
 
 - **Frontend:** Next.js 16 (App Router), React 19, TS, Tailwind v4, `@dnd-kit/*`, `@tanstack/react-query`. Phase 4 (board view) + Phase 5 Steps 1–9a done. `npx tsc --noEmit`, `npm run lint`, `npm run build` clean.
-- **Backend:** Node 22 + Express 5 + TS (`module: NodeNext`, `verbatimModuleSyntax`, ESM `.js` imports) + Prisma 7 (`@prisma/adapter-pg`, import from `src/generated/prisma/client.js`). Modular MVC: per-feature `controller / service / validation / routes / index`. Phase 1–4 + Phase 5 Float simplification + Steps 7, 8 done; Steps 9 (rate limit), 10 (schema widening), 11 (jest) planned.
+- **Backend:** Node 22 + Express 5 + TS (`module: NodeNext`, `verbatimModuleSyntax`, ESM `.js` imports) + Prisma 7 (`@prisma/adapter-pg`, import from `src/generated/prisma/client.js`). Modular MVC: per-feature `controller / service / validation / routes / index`. Phase 1–4 + Phase 5 Float simplification + Steps 7, 8, 9, 10 done; 11 (jest), 12 (vitest), 13 (e2e), 14 (deploy) planned.
 - **DB:** PostgreSQL + Prisma 7.
 - **Auth:** JWT (`jsonwebtoken`) + `bcryptjs`. Delivered as httpOnly `token` cookie via `cookie-parser` (Step 8) — `Authorization: Bearer …` removed. No `localStorage` on the client.
-- **Validation:** `zod` per module + generic `validate(schema, source?)` middleware. Tags each handler with non-enumerable `kanbanValidate` marker so `scripts/audit-routes.mts` can detect validators by introspection (29 routes, 7 public, 22 validated, 100% non-public).
+- **Validation:** `zod` per module + generic `validate(schema, source?)` middleware. Tags each handler with non-enumerable `kanbanValidate` marker so `scripts/audit-routes.mts` can detect validators by introspection (36 routes, 7 public, 29 validated, 100% non-public).
 - **Ordering:** `Column.position` and `Task.position` are `Float @default(1000)`. Helper at `server/src/common/utils/floatPosition.ts` (`nextAppend`, `between`, `rePack`) — the **only** place position math runs. Inline `position: max+1` is forbidden. Float precision floor (~50 midpoint inserts) — workaround is `PATCH /reorder`.
 - **Dev runner:** `tsx`. **Package manager:** npm.
 
@@ -61,8 +61,8 @@ lib/                          # api.ts (axios, withCredentials: true), useMediaQ
 - **Responsive tiers** (Step 1): `compact < 640px` (sidebar as `<SidebarOverlay />` slide-in, board as `<LaneFocusView />` with tab strip, no dnd-kit) / `tablet 640–1023px` (320px drawer, `PointerSensor` only, `<ScrollToEndChevron />` floats right) / `desktop ≥ 1024px` (full `<Sidebar />` collapsible to icons, `PointerSensor + KeyboardSensor`). Tier from `useMediaQuery("(min-width: 640px)")` + `useMediaQuery("(min-width: 1024px)")` (both `useSyncExternalStore`, no dep).
 - **Loading/error/empty (Step 4):** `<BoardSkeleton />` (3 ghost cols × 5 ghost cards, `animate-pulse`, tier-aware) + `<BoardErrorState />` discriminated on `network | auth | forbidden | not_found | unknown` (auth → `useAuth().signOut() + router.replace("/")`). `<EmptyBoardsState />` for no-boards (invitations line + View button + Create CTA + sign-out link). `readErrorStatus(error)` in `lib/api.ts` extracts HTTP status from `AxiosError`.
 - **Keyboard shortcuts (Step 6):** `c` → `<QuickAddTaskModal />` (column select + title input → `useCreateTaskMutation`), `b` → `<CreateBoardDrawer />`, `m` → `<ShareBoardModal />`, `?` → `<KeyboardShortcutsHelp />` (or `?` button in `BoardControlBar`), `Esc` closes overlays. Keydown in `BoardView` short-circuits if target is `input`/`textarea`/`[contenteditable]`, if a modifier is held, or if any overlay is already open (only `?` may layer).
-- **`TaskModal`** (Step 5 wired): title + Raw-tab description edits debounced 600ms → `PATCH /api/tasks/:id` via `useUpdateTaskMutation`. Star toggle is local-state only (Step 10 will add `Task.starred`). Trash → `useDeleteTaskMutation` + 5s "Undo" toast (`Toast` `action` prop) that re-creates via `useCreateTaskMutation`. Subtasks / comments / metadata sidebar / role change stay local-state and toast `${surface} ships in Phase 5 Step 10.`. Open via `selectedTaskId` in lifted `useOverlayState` (with `expectedBoardId` to prevent stale-id rendering). Re-mount on `key={task.id}`, not on `open` (project's ESLint rejects `setState-in-effect`).
-- **`ShareBoardModal` + `CreateBoardDrawer`** (Step 5 wired): `onSendInvite` → optimistic `POST /api/boards/:id/members` via `useInviteMemberMutation`; `onRemoveMember` → optimistic `DELETE /api/boards/:id/members/:userId` via `useRemoveMemberMutation`; `onLinkSharingChange` → `PATCH /api/boards/:id` via `useUpdateBoardMutation`; `onCreate` → `POST /api/boards` with `{ title, projectKey (≤6 uppercased), colorIdentity, template }` via `useCreateBoardMutation`, then `router.push("/boards/:newId")`. The new POST/PATCH board fields are accepted server-side but **dropped at the Prisma write** (Step 10 adds the columns). `onChangeMemberRole` stays no-op until Step 10.
+- **`TaskModal`** (Step 5 wired): title + Raw-tab description edits debounced 600ms → `PATCH /api/tasks/:id` via `useUpdateTaskMutation`. Star toggle wired to `PATCH /api/tasks/:id` with `{ starred }` via `useUpdateTaskMutation` (initialized from `task.starred`, immediate local flip + optimistic cache patch). Trash → `useDeleteTaskMutation` + 5s "Undo" toast (`Toast` `action` prop) that re-creates via `useCreateTaskMutation`. Subtasks wired to `POST/PATCH/DELETE /api/tasks/:id/subtasks[/:subtaskId]` via `useCreateSubtaskMutation`/`useUpdateSubtaskMutation`/`useDeleteSubtaskMutation`; comments wired to `POST /api/tasks/:id/comments` + `GET /api/tasks/:id/comments` via `useCreateCommentMutation` + `useTaskCommentsQuery`; metadata sidebar (priority cycle, move-to-column dropdown) wired via `useUpdateTaskMutation` / `useMoveTaskMutation`.. Open via `selectedTaskId` in lifted `useOverlayState` (with `expectedBoardId` to prevent stale-id rendering). Re-mount on `key={task.id}`, not on `open` (project's ESLint rejects `setState-in-effect`).
+- **`ShareBoardModal` + `CreateBoardDrawer`** (Step 5 wired): `onSendInvite` → optimistic `POST /api/boards/:id/members` via `useInviteMemberMutation`; `onRemoveMember` → optimistic `DELETE /api/boards/:id/members/:userId` via `useRemoveMemberMutation`; `onLinkSharingChange` → `PATCH /api/boards/:id` via `useUpdateBoardMutation`; `onCreate` → `POST /api/boards` with `{ title, projectKey (≤6 uppercased), colorIdentity, template }` via `useCreateBoardMutation`, then `router.push("/boards/:newId")`. The new POST/PATCH board fields are accepted server-side but **persisted at the Prisma write** (Step 10). `onChangeMemberRole` is wired to `useUpdateMemberRoleMutation` (`PATCH /api/boards/:id/members/:userId`).
 - **`useOverlayState`** (`src/features/board/overlays/useOverlayState.tsx`, ~50 lines): owns `createBoardOpen` + `selectedTaskId` + `expectedBoardId` + `invitationsInboxOpen` at app root (`<OverlayStateProvider />` in `app/layout.tsx`). Home page and board view share the same flags without prop-drilling.
 - **`AddColumnGhost` + `useCreateColumnMutation`:** `POST /api/boards/:boardId/columns` with standard onMutate (optimistic placeholder at `Number.MAX_SAFE_INTEGER`) → onSuccess swap → onError snapshot rollback → onSettled invalidate. Same `<AddColumnGhost />` rendered in 3 places: tablet/desktop empty-state branch, column strip tail, compact tier `<LaneFocusView />` empty state.
 - **`ColumnShell` column-management menu:** header `more_horiz` opens `<div role="menu">` with **Rename** (input swap, Enter/blur commit, Esc revert, double-click shortcut) + **Delete** (two-step "Click to confirm" with 3s auto-disarm via inline `setTimeout`, icon `delete` → `warning`). Same anti-misclick pattern as `TaskModal` trash and `InvitationsInbox` decline. Wired by `BoardView.handleRenameColumn` / `handleDeleteColumn` → `useUpdateColumnMutation` (`PATCH /api/columns/:id`) / `useDeleteColumnMutation` (`DELETE /api/columns/:id`). **No Undo for column delete** (re-creating cascade-wiped tasks is expensive / race-prone). `LaneFocusView` forwards both props so compact tier gets the same affordance.
@@ -84,17 +84,17 @@ npm run prisma:generate / migrate / studio
 
 ```
 server/
-├── prisma/schema.prisma          # User, Board (soft-delete via deletedAt), BoardUser (+ joinedAt), BoardInvitation, Column, Task; Step 10 widens Task (starred/priority/dueDate/storyPoints/labels/assignees), Board (linkSharing/projectKey/colorIdentity/template), BoardUser.role (String → BoardRole enum), + TaskSubtask + TaskComment
-├── prisma/migrations/            # init, phase02_boards_access, phase04_fractional_positions, phase05_float_positions, phase05_polish (Step 10, planned)
+├── prisma/schema.prisma          # User, Board (soft-delete via deletedAt, Step 10: linkSharing/projectKey/colorIdentity/template), BoardUser (+ joinedAt, role: BoardRole enum), BoardInvitation, Column, Task (Step 10: starred/priority/dueDate/storyPoints/labels/assignees), + TaskSubtask + TaskComment + TaskAssignee (Step 10)
+├── prisma/migrations/            # init, phase02_boards_access, phase03_task_cascade_on_column_delete, phase04_fractional_positions, phase05_float_positions, phase05_polish (Step 10)
 ├── src/
 │   ├── index.ts                  # env → DB → listen
 │   ├── app.ts                    # createApp(): helmet, cors({origin:CORS_ORIGIN, credentials:true}), json, cookie-parser, modules, error mw
 │   ├── config/env.ts             # zod env (DATABASE_URL, JWT_SECRET required; PORT, BCRYPT_SALT_ROUNDS, JWT_EXPIRES_IN, CORS_ORIGIN, NODE_ENV, LOG_LEVEL optional)
 │   ├── lib/prisma.ts             # shared PrismaClient with PrismaPg adapter (singleton)
-│   ├── common/                   # errors (HttpError + errorMw), middleware (auth[cookie] + access-control[loadBoard/Column/Task + requireBoardAccess/Owner], planned logger + rate-limit), utils (asyncHandler, floatPosition), validators (validate.middleware w/ kanbanValidate marker), envelope.ts (envelope<T>() + errorEnvelope()), types (express.d.ts)
+│   ├── common/                   # errors (HttpError + errorMw), middleware (auth[cookie] + access-control[loadBoard/Column/Task + requireBoardAccess/Owner] + rate-limit[loginRateLimiter/registerRateLimiter on auth routes]), utils (asyncHandler, floatPosition), validators (validate.middleware w/ kanbanValidate marker), envelope.ts (envelope<T>() + errorEnvelope()), types (express.d.ts). _Planned_: `logger.middleware.ts` (pino-http).
 │   ├── modules/                  # auth/, boards/, board-invitations/, columns/, tasks/, health/ — each = controller/service/validation/routes/index
 │   └── generated/prisma/         # gitignored
-├── scripts/audit-routes.mts      # Step 7 — walks live route table from createApp(); asserts validate(...) on every non-public route. 29 routes, 7 public, 22 validated.
+├── scripts/audit-routes.mts      # Step 7 — walks live route table from createApp(); asserts validate(...) on every non-public route. 36 routes, 7 public, 29 validated.
 ├── .env                          # gitignored
 ├── phase2-e2e.ps1                # 48 assertions (Step 8: WebRequestSession cookies)
 ├── phase4-e2e.ps1                # 59 assertions (Float ordering)
@@ -102,14 +102,14 @@ server/
 └── phase5-e2e.ps1                # planned (Step 13) ≥ 60 assertions
 ```
 
-**Routes** (current; Step 10 additions noted):
+**Routes** (current; Step 10 done):
 
 - `GET /health` (public; 200 `{status:"ok",timestamp,db:"up"}` on `SELECT 1` success, else 503).
-- `POST /api/auth/register`, `/login` (public; set httpOnly `token` cookie + return `{id,email,token}`); `GET /api/auth/me` (public allowlist, behind `requireAuth`); `POST /api/auth/logout` (behind `requireAuth`, clears cookie, 204).
-- `GET /api/boards` (public allowlist, behind `requireAuth`); `POST /api/boards` (Step 5 widened: optional `projectKey` ≤6 uppercased, `colorIdentity` enum, `template` enum — accepted on wire, dropped at Prisma write until Step 10); `GET /api/boards/:id` (nested columns[tasks] by position asc, members owner-first by joinedAt); `PATCH /api/boards/:id` (Step 5 widened with optional `linkSharing`); `DELETE /api/boards/:id` (soft-delete via `deletedAt`); `GET/POST/DELETE /api/boards/:id/members`; **Step 10 planned**: `PATCH /api/boards/:id/members/:userId` for role change.
+- `POST /api/auth/register`, `/login` (public; rate-limited by `registerRateLimiter` (5/hr) / `loginRateLimiter` (10/15min) respectively; set httpOnly `token` cookie via `cookie-parser` with `secure: NODE_ENV==="production"` + `sameSite:"lax"` + `path:"/"`; returns `{id,email,token}`); `GET /api/auth/me` (public allowlist, behind `requireAuth`); `POST /api/auth/logout` (behind `requireAuth`, clears cookie, 204).
+- `GET /api/boards` (public allowlist, behind `requireAuth`); `POST /api/boards` (Step 5 widened with optional `projectKey`, `colorIdentity`, `template` — **persisted** in Step 10); `GET /api/boards/:id` (nested columns[tasks] by position asc, members owner-first by joinedAt, tasks include Step 10 fields); `PATCH /api/boards/:id` (Step 5 widened with optional `linkSharing` — **persisted** in Step 10); `DELETE /api/boards/:id` (soft-delete via `deletedAt`); `GET/POST/DELETE /api/boards/:id/members` (`POST` accepts optional `role`, default MEMBER); **`PATCH /api/boards/:id/members/:userId`** (Step 10 — role change to ADMIN/MEMBER, OWNER immutable → 400).
 - `GET /api/board-invitations` (caller's PENDING invites); `POST /api/board-invitations/:id/accept` (atomic upsert BoardUser + flip to ACCEPTED); `POST /api/board-invitations/:id/decline`.
 - Columns: `GET/POST /api/boards/:boardId/columns`, `GET/PATCH/DELETE /api/columns/:id` (CASCADE to tasks on delete), `PATCH /api/boards/:boardId/columns/reorder` (re-key via `floatPosition.rePack(i)`), `POST /api/columns/:id/move` (Step 4, Float).
-- Tasks: `GET/POST /api/columns/:columnId/tasks`, `GET/PATCH/DELETE /api/tasks/:id` (Step 10 widens PATCH: `starred`, `priority`, `dueDate`, `storyPoints`, `labels`), `POST /api/columns/:columnId/tasks/:taskId/move` (Step 3, Float). **Step 10 planned**: `POST/PATCH/DELETE /api/tasks/:id/subtasks[/:subtaskId]`, `GET/POST /api/tasks/:id/comments`, `PUT /api/tasks/:id/assignees`.
+- Tasks: `GET/POST /api/columns/:columnId/tasks`, `GET/PATCH/DELETE /api/tasks/:id` (Step 10 widens PATCH: `starred`, `priority`, `dueDate`, `storyPoints`, `labels` — `assignees` excluded; `PUT /api/tasks/:id/assignees` owns that relation), `POST /api/columns/:columnId/tasks/:taskId/move` (Step 3, Float). **Step 10 done**: `POST/PATCH/DELETE /api/tasks/:id/subtasks[/:subtaskId]`, `GET/POST /api/tasks/:id/comments`, `PUT /api/tasks/:id/assignees`.
 
 **Middleware chain** on resource `:id` routes: `requireAuth → validate(ParamSchema, "params") → loadBoard|loadColumn|loadTask → requireBoardAccess|requireBoardOwner → asyncHandler(controller.fn)`. `loadColumn`/`loadTask` auto-populate `req.board` (single query joins parent). Cross-board moves return 403, not 404. `position` is changed only via `move` or `reorder`, never via `PATCH`.
 
@@ -126,15 +126,18 @@ server/
 
 ## Testing
 
-No `jest`/`vitest` yet — Steps 11/12 planned. Validation exercised by three PowerShell e2e scripts (`cd server` first; `npm run dev` on :4000):
+No `jest`/`vitest` yet — Steps 11/12 planned. Validation exercised by three PowerShell e2e scripts (`cd server` first; `npm run dev` on :4000). Phase 5 Step 10 (schema + new endpoints + frontend wiring) is complete — `TaskModal` star/subtasks/comments/metadata/priority/move-to-column all wired; `BoardView` passes real task data; `ShareBoardModal` role change wired; new hooks for subtasks/comments/assignees/member-role + `useTaskCommentsQuery` for the modal comment feed. All three e2e suites pass (48 + 59 + 45 = 152 assertions). Set `RATE_LIMIT_DISABLED=1` env var to bypass auth rate limits during local e2e runs.
 
 - `phase2-e2e.ps1` — 48 assertions (uses `WebRequestSession` cookie jar).
 - `phase4-e2e.ps1` — 59 assertions (Float ordering surface).
 - `phase4-step7-e2e.ps1` — 45 assertions (§A Float column-move / §B VAL-4.6.* non-functional / §C frontend static / §D Phase 5 Step 7 input-validation audit).
+- `phase5-e2e.ps1` — **planned** (Step 13) ≥ 60 assertions.
 
-Step 8 extended `VAL-4.6.3` "no new top-level server deps" allowlist for `cookie-parser` + `@types/cookie-parser`. Step 8 rewrote `phase4-step7-e2e.ps1` §B grep checks from `& grep` to native `Get-Content`/`-match` (Windows has no `grep` on PATH).
+Step 8 (cookie auth migration) moved the JWT into an httpOnly `token` cookie via `cookie-parser` (`secure: NODE_ENV==="production"`, `sameSite: "lax"`); Step 8 extended `VAL-4.6.3` "no new top-level server deps" allowlist for `cookie-parser` + `@types/cookie-parser`. Step 9 extended it again for `express-rate-limit`. Step 8 rewrote `phase4-step7-e2e.ps1` §B grep checks from `& grep` to native `Get-Content`/`-match` (Windows has no `grep` on PATH).
 
 `floatPosition` math is exercised end-to-end by `phase4-e2e.ps1` (10-task 1000-step append) + `phase4-step7-e2e.ps1` §A; no separate unit test (helper is trivial).
+
+Phase 5 **Step 10** (schema widening + new endpoints) is **done** — both backend and frontend: `Task` fields `starred`/`priority`/`dueDate`/`storyPoints`/`labels` + `assignees` relation; `Board` fields `linkSharing`/`projectKey`/`colorIdentity`/`template`; `BoardUser.role` widened to `BoardRole` enum; new models `TaskSubtask`/`TaskComment`/`TaskAssignee`. `GET /api/tasks/:id` and `GET /api/boards/:id` now include `subtasks` in the task shape. Auth cookie `secure` flag is environment-gated so local e2e tests over HTTP keep working. Set `RATE_LIMIT_DISABLED=1` to bypass auth rate limits during local e2e runs.
 
 Phase 5 plans backend `jest` + `ts-jest` + `supertest` (80% line / 70% branch) and frontend `vitest` + Testing Library + jsdom (60% line) plus `phase5-e2e.ps1` (≥ 60 assertions in §A rate-limit / §B schema additions / §C non-functional / §D frontend static).
 
@@ -145,7 +148,7 @@ Phase 5 plans backend `jest` + `ts-jest` + `supertest` (80% line / 70% branch) a
 
 ## Specs
 
-`specs.md` (top-level), `specs/Mission.md`, `specs/Techstack.md`, `specs/Roadmap.md`, `specs/Phase01/` … `specs/Phase05/` (Plan.md / Requirements.md / Validation.md per phase). Phase 5 = Polishing & Polish (14 steps, ~30 hours); Steps 1–9a + Step 7 (audit) done; Steps 8 (logging) / 9 (rate limit) / 10 (schema) / 11 (jest) / 12 (vitest) / 13 (e2e) / 14 (deploy) planned.
+`specs.md` (top-level), `specs/Mission.md`, `specs/Techstack.md`, `specs/Roadmap.md`, `specs/Phase01/` … `specs/Phase05/` (Plan.md / Requirements.md / Validation.md per phase). Phase 5 = Polishing & Polish (14 steps, ~30 hours); Steps 1–9a + Steps 7, 8 (cookie auth), 9 (rate limit), 10 (schema) done; 11 (jest) / 12 (vitest) / 13 (e2e) / 14 (deploy) planned.
 
 ## Deployment & CI (Phase 5, planned)
 

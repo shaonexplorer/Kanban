@@ -1,20 +1,27 @@
 import { Router } from "express";
 import { asyncHandler } from "../../common/utils/asyncHandler.js";
 import { requireAuth } from "../../common/middleware/auth.middleware.js";
+import { loginRateLimiter, registerRateLimiter } from "../../common/middleware/rate-limit.middleware.js";
 import { validate } from "../../common/validators/validate.middleware.js";
 import * as authController from "./auth.controller.js";
 import { loginSchema, registerSchema } from "./auth.validation.js";
 
 const router = Router();
 
+// Rate limit the auth surface (§9.3 / Phase 5 plan) to blunt
+// credential-stuffing and registration abuse. The limiters run BEFORE
+// the validate() middleware so a flood of malformed payloads can't
+// exhaust the bcrypt comparison path.
 router.post(
   "/register",
+  registerRateLimiter,
   validate(registerSchema),
   asyncHandler(authController.register)
 );
 
 router.post(
   "/login",
+  loginRateLimiter,
   validate(loginSchema),
   asyncHandler(authController.login)
 );

@@ -45,7 +45,7 @@ export function BoardSkeleton({ tier = "desktop" }: BoardSkeletonProps) {
       aria-busy="true"
       aria-label="Loading board"
       data-testid="board-skeleton"
-      className="flex-1 overflow-x-auto kanban-scroll px-space-xl py-space-lg select-none"
+      className="flex-1 overflow-x-auto px-space-xl py-space-lg select-none"
     >
       <div className="flex items-start gap-gutter-board min-w-max pb-space-3xl">
         {Array.from({ length: GHOST_COLUMNS }).map((_, columnIdx) => (

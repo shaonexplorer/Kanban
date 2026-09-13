@@ -11,44 +11,52 @@ import * as tasksController from "./tasks.controller.js";
 import {
   ColumnAndTaskIdParamSchema,
   ColumnScopedTaskParamSchema,
+  CreateCommentSchema,
+  CreateSubtaskSchema,
   CreateTaskSchema,
   MoveTaskSchema,
+  SetAssigneesSchema,
   TaskIdParamSchema,
+  TaskSubtaskParamsSchema,
+  UpdateSubtaskSchema,
   UpdateTaskSchema,
 } from "./tasks.validation.js";
 
 /**
  * Router for the `tasks` module.
  *
- * Mounts THREE URL subtrees on a single `/api` mount point:
- *   - `/api/columns/:columnId/tasks`            (column-scoped: list, create)
- *   - `/api/columns/:columnId/tasks/:taskId/move` (move, Phase 4 Step 3)
- *   - `/api/tasks/:id`                          (task-scoped: get, update, delete)
+ * Mounts FOUR URL subtrees on a single `/api` mount point:
+ *   - `/api/columns/:columnId/tasks`                (column-scoped: list, create)
+ *   - `/api/columns/:columnId/tasks/:taskId/move`   (move, Phase 4 Step 3)
+ *   - `/api/tasks/:id`                              (task-scoped: get, update, delete)
+ *   - `/api/tasks/:id/subtasks[/:subtaskId]`       (Phase 5 Step 10)
+ *   - `/api/tasks/:id/comments`                     (Phase 5 Step 10)
+ *   - `/api/tasks/:id/assignees`                   (Phase 5 Step 10)
  *
  * Middleware chain patterns:
  *  - Column-scoped routes use
  *    `requireAuth → validate(ColumnScopedTaskParamSchema, "params")
- *     → loadColumn() → requireBoardAccess`.
+ *     → loadColumn("params", "columnId") → requireBoardAccess`.
  *  - Task-scoped routes use
  *    `requireAuth → validate(TaskIdParamSchema, "params")
  *     → loadTask() → requireBoardAccess`.
- *  - The move route (Phase 4 Step 3) chains
+ *  - Subtask / comment / assignee routes reuse the task-scoped chain
+ *    (they validate their own `:subtaskId` param in the body schema,
+ *    not a separate param validator — the subtask/comment existence
+ *    is checked in the service).
+ *  - The move route chains
  *    `requireAuth → validate(ColumnAndTaskIdParamSchema, "params")
  *     → loadColumn("params", "columnId") → loadTask("params", "taskId")
- *     → requireBoardAccess → validate(MoveTaskSchema)`. Both loaders
- *    populate `req.board`; the `requireBoardAccess` check runs against
- *    the source column's board. The destination's board is verified by
- *    the service's defensive check (cross-board moves are 403).
- *  - `loadColumn()` and `loadTask()` both populate `req.board` (and
- *    `req.column` where applicable), so the existing
- *    `requireBoardAccess` middleware chains behind them unchanged.
+ *     → requireBoardAccess → validate(MoveTaskSchema)`.
+ *  - `loadColumn()` and `loadTask()` both populate `req.board`, so the
+ *    existing `requireBoardAccess` middleware chains behind them unchanged.
  *  - Param validation runs BEFORE the resource loader so a non-UUID id
  *    returns 400 instead of 404.
  *
  * Phase 3/4 reuses `requireBoardAccess` for ALL task mutations — both
  * owners and accepted members can author content on a shared board.
  * `position` and `columnId` are only ever changed via the move
- * endpoint; `PATCH /api/tasks/:id` still does not accept them.
+ * endpoint; `PATCH /api/tasks/:id` does not accept them.
  */
 const router = Router();
 
@@ -108,7 +116,7 @@ router.get(
   asyncHandler(tasksController.getTask)
 );
 
-// Update a task's title and/or description.
+// Update a task's mutable fields (Phase 5 Step 10 widens this).
 router.patch(
   "/tasks/:id",
   requireAuth,
@@ -127,6 +135,82 @@ router.delete(
   loadTask(),
   requireBoardAccess,
   asyncHandler(tasksController.deleteTask)
+);
+
+// ---------------------------------------------------------------------------
+// Phase 5 Step 10 — subtasks
+// ---------------------------------------------------------------------------
+
+// Create a subtask on a task.
+router.post(
+  "/tasks/:id/subtasks",
+  requireAuth,
+  validate(TaskIdParamSchema, "params"),
+  loadTask(),
+  requireBoardAccess,
+  validate(CreateSubtaskSchema),
+  asyncHandler(tasksController.createSubtask)
+);
+
+// Update a subtask's title and/or done state.
+router.patch(
+  "/tasks/:id/subtasks/:subtaskId",
+  requireAuth,
+  validate(TaskSubtaskParamsSchema, "params"),
+  loadTask(),
+  requireBoardAccess,
+  validate(UpdateSubtaskSchema),
+  asyncHandler(tasksController.updateSubtask)
+);
+
+// Delete a subtask.
+router.delete(
+  "/tasks/:id/subtasks/:subtaskId",
+  requireAuth,
+  validate(TaskSubtaskParamsSchema, "params"),
+  loadTask(),
+  requireBoardAccess,
+  asyncHandler(tasksController.deleteSubtask)
+);
+
+// ---------------------------------------------------------------------------
+// Phase 5 Step 10 — comments
+// ---------------------------------------------------------------------------
+
+// List comments on a task.
+router.get(
+  "/tasks/:id/comments",
+  requireAuth,
+  validate(TaskIdParamSchema, "params"),
+  loadTask(),
+  requireBoardAccess,
+  asyncHandler(tasksController.listComments)
+);
+
+// Post a comment on a task.
+router.post(
+  "/tasks/:id/comments",
+  requireAuth,
+  validate(TaskIdParamSchema, "params"),
+  loadTask(),
+  requireBoardAccess,
+  validate(CreateCommentSchema),
+  asyncHandler(tasksController.createComment)
+);
+
+// ---------------------------------------------------------------------------
+// Phase 5 Step 10 — assignees
+// ---------------------------------------------------------------------------
+
+// Replace the full assignee set on a task.
+router.put(
+  "/tasks/:id/assignees",
+  requireAuth,
+  validate(TaskIdParamSchema, "params"),
+  loadTask(),
+  requireBoardAccess,
+  validate(SetAssigneesSchema),
+  asyncHandler(tasksController.setAssignees)
 );
 
 export default router;

@@ -149,7 +149,7 @@ export function LaneFocusView({
           ref={stripRef}
           role="tablist"
           aria-label="Board columns"
-          className="flex-1 min-w-0 overflow-x-auto board-scroll"
+          className="flex-1 min-w-0 overflow-x-auto"
         >
           <div className="flex items-center gap-space-2xs min-w-max">
             {columns.map((column, idx) => {
@@ -213,7 +213,7 @@ export function LaneFocusView({
         id={`lane-panel-${activeColumn.id}`}
         role="tabpanel"
         aria-labelledby={`lane-tab-${activeColumn.id}`}
-        className="flex-1 overflow-y-auto board-scroll px-space-md py-space-md"
+        className="flex-1 overflow-y-auto px-space-md py-space-md"
       >
         <Column
           boardId={boardId}

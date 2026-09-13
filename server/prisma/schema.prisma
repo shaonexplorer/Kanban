@@ -24,6 +24,10 @@ model User {
   invitationsSent     BoardInvitation[] @relation("InvitationsSent")
   // Invitations this user has received from board owners
   invitationsReceived BoardInvitation[] @relation("InvitationsReceived")
+  // Phase 5 Step 10 — comments this user has authored on tasks
+  comments            TaskComment[]
+  // Phase 5 Step 10 — tasks this user is assigned to
+  assignedTasks       TaskAssignee[]
 }
 
 /// A Kanban board — the top-level container for columns and tasks.
@@ -31,6 +35,18 @@ model Board {
   id         String      @id @default(uuid())
   title      String
   ownerId    String
+  // Phase 5 Step 10 — public-link sharing mode. `DISABLED` (default)
+  // means a public read endpoint (future work) is rejected;
+  // `VIEW` opens it up. The toggle is wired in the share modal;
+  // the public endpoint is deferred.
+  linkSharing    LinkSharing    @default(DISABLED)
+  // Phase 5 Step 10 — create-board drawer metadata. `projectKey` is
+  // ≤ 6 uppercase alphanumeric chars (validated at the edge in
+  // `boards.validation.ts`). `colorIdentity` / `template` drive the
+  // Stitch-faithful board chrome (color swatch + workflow preset).
+  projectKey     String?
+  colorIdentity  ColorIdentity?
+  template       Template?
   createdAt  DateTime    @default(now())
   // Soft-delete timestamp; null = active, non-null = tombstoned
   deletedAt  DateTime?
@@ -41,10 +57,16 @@ model Board {
 }
 
 /// Join table representing a user's collaboration access to a board.
+///
+/// Phase 5 Step 10 — `role` is now a `BoardRole` enum (was a free-form
+/// `String`). Default is `MEMBER`; the `phase05_polish` migration's
+/// post-step promotes the existing owner rows to `OWNER` so the
+/// existing data is preserved verbatim.
 model BoardUser {
   id       String   @id @default(uuid())
   boardId  String
   userId   String
+  role     BoardRole @default(MEMBER)
   // When the user joined the board — used to sort the members list
   joinedAt DateTime @default(now())
   board    Board    @relation(fields: [boardId], references: [id])
@@ -62,14 +84,19 @@ model Column {
   // at MAX(existing.position) + 1000; reorders pick (prev + next) / 2.
   // KNOWN LIMITATION: Float precision floor — after ~50 midpoint
   // inserts in one gap, (prev + next) / 2 rounds to prev and the move
-  // lands on the wrong neighbor. Workaround: PATCH /reorder, which
-  // re-keys to fresh 1000-step positions.
+  // lands on the wrong neighbor. Workaround: PATCH /reorder.
   position Float   @default(1000)
   board    Board   @relation(fields: [boardId], references: [id])
   tasks    Task[]
 }
 
 /// An individual work item within a column.
+///
+/// Phase 5 Step 10 widens the surface with the `TaskModal`'s
+/// metadata sidebar fields (star / priority / due date / story
+/// points / labels) and the assignees relation. `position` and
+/// `columnId` are reserved for the `move` endpoint and never
+/// patched via `PATCH /api/tasks/:id`.
 model Task {
   id          String   @id @default(uuid())
   title       String
@@ -78,8 +105,22 @@ model Task {
   // Float midpoint index within the column (Phase 5 simplification).
   // Same precision-floor caveat as Column.position above.
   position    Float    @default(1000)
+  // Phase 5 Step 10 — modal chrome. `starred` drives the star icon
+  // in the modal header; `priority` / `dueDate` / `storyPoints` /
+  // `labels` drive the metadata sidebar chips. `assignees` is its
+  // own join (see `TaskAssignee`) — the dedicated
+  // `PUT /api/tasks/:id/assignees` endpoint owns that relation.
+  starred      Boolean      @default(false)
+  priority     TaskPriority?
+  dueDate      DateTime?
+  storyPoints  Int?
+  labels       String[]     @default([])
   createdAt   DateTime @default(now())
   column      Column   @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  // Phase 5 Step 10 — child relations
+  subtasks    TaskSubtask[]
+  comments    TaskComment[]
+  assignees   TaskAssignee[]
 }
 
 /// Status of a board-ownership invitation. PENDING is the only state in which
@@ -89,6 +130,49 @@ enum BoardInvitationStatus {
   ACCEPTED
   DECLINED
   REVOKED
+}
+
+/// Phase 5 Step 10 — `BoardUser.role` enum. `OWNER` is reserved for
+/// the board's `ownerId` (set by the `phase05_polish` migration, not
+/// user-assignable). `ADMIN` / `MEMBER` are the two non-owner roles
+/// the share modal can toggle between.
+enum BoardRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+/// Phase 5 Step 10 — board public-link sharing mode.
+enum LinkSharing {
+  DISABLED
+  VIEW
+}
+
+/// Phase 5 Step 10 — create-board drawer color swatches. Mirrors
+/// the swatch set in the Stitch design.
+enum ColorIdentity {
+  PRIMARY
+  TERTIARY
+  SECONDARY
+  ERROR
+  OUTLINE
+}
+
+/// Phase 5 Step 10 — workflow template presets surfaced in the
+/// create-board drawer. The enum is open — future presets can be
+/// added without a server change.
+enum Template {
+  SOFTWARE_ENG
+  INCIDENT_MGMT
+}
+
+/// Phase 5 Step 10 — task priority levels surfaced in the
+/// `TaskModal` metadata sidebar.
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
 }
 
 /// A pending (or terminal) invitation for a user to collaborate on a board.
@@ -108,4 +192,47 @@ model BoardInvitation {
 
   @@index([inviteeId, status])
   @@index([boardId, status])
+}
+
+/// Phase 5 Step 10 — a sub-item of a task (a checkbox in the
+/// `TaskModal`'s subtasks list). `position` reuses the Phase 5 Float
+/// midpoint scheme so subtask reorders stay consistent with the rest
+/// of the codebase.
+model TaskSubtask {
+  id        String   @id @default(uuid())
+  taskId    String
+  title     String
+  done      Boolean  @default(false)
+  position  Float    @default(1000)
+  createdAt DateTime @default(now())
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+/// Phase 5 Step 10 — a comment posted on a task. The author is the
+/// authenticated caller; we keep a denormalised `authorId` (no soft
+/// delete) so deleting the author's user row would have to be
+/// handled by the user-management flow that ships in a future
+/// phase. The endpoint returns the author's email via a join so the
+/// SPA can render the thread without a follow-up call.
+model TaskComment {
+  id        String   @id @default(uuid())
+  taskId    String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id])
+}
+
+/// Phase 5 Step 10 — join table for task assignees. Composite
+/// primary key on `(taskId, userId)` enforces uniqueness; the
+/// dedicated `PUT /api/tasks/:id/assignees` endpoint replaces the
+/// full set on every call (simpler than a delta for the v1 UX).
+model TaskAssignee {
+  taskId String
+  userId String
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@id([taskId, userId])
 }

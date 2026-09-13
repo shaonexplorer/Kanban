@@ -3,9 +3,14 @@ import * as tasksService from "./tasks.service.js";
 import type {
   ColumnAndTaskIdParam,
   ColumnScopedTaskParam,
+  CreateSubtaskInput,
   CreateTaskInput,
+  CreateCommentInput,
+  SetAssigneesInput,
   MoveTaskInput,
   TaskIdParam,
+  TaskSubtaskParams,
+  UpdateSubtaskInput,
   UpdateTaskInput,
 } from "./tasks.validation.js";
 
@@ -28,7 +33,8 @@ import type {
 /**
  * POST /api/columns/:columnId/tasks — create a new task in a column.
  * Returns 201 with the full task shape
- * (`{ id, title, description, columnId, position, createdAt }`).
+ * (`{ id, title, description, columnId, position, createdAt, starred,
+ *   priority, dueDate, storyPoints, labels, assignees }`).
  */
 export async function createTask(req: Request, res: Response): Promise<void> {
   const { id: userId } = req.user!;
@@ -68,8 +74,8 @@ export async function getTask(req: Request, res: Response): Promise<void> {
 }
 
 /**
- * PATCH /api/tasks/:id — update a task's title and/or description.
- * Returns 200 with the updated task (full shape including `createdAt`).
+ * PATCH /api/tasks/:id — update a task's mutable fields.
+ * Returns 200 with the updated task (full shape).
  */
 export async function updateTask(req: Request, res: Response): Promise<void> {
   const { id: userId } = req.user!;
@@ -101,8 +107,7 @@ export async function deleteTask(req: Request, res: Response): Promise<void> {
  * new position, either within the same column (reorder) or across
  * columns on the same board. Cross-board moves are rejected with 403.
  *
- * Returns 200 with the moved task (full shape:
- * `{ id, title, description, columnId, position, createdAt }`).
+ * Returns 200 with the moved task (full shape).
  */
 export async function moveTask(req: Request, res: Response): Promise<void> {
   const { id: userId } = req.user!;
@@ -111,4 +116,92 @@ export async function moveTask(req: Request, res: Response): Promise<void> {
 
   const moved = await tasksService.moveTask(userId, taskId, input);
   res.status(200).json(moved);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 Step 10 — subtasks
+// ---------------------------------------------------------------------------
+
+/**
+ * POST /api/tasks/:id/subtasks — create a new subtask.
+ * Returns 201 with the new subtask shape.
+ */
+export async function createSubtask(req: Request, res: Response): Promise<void> {
+  const { id: userId } = req.user!;
+  const { id: taskId } = req.params as TaskIdParam;
+  const input = req.body as CreateSubtaskInput;
+
+  const subtask = await tasksService.createSubtask(userId, taskId, input);
+  res.status(201).json(subtask);
+}
+
+/**
+ * PATCH /api/tasks/:id/subtasks/:subtaskId — update a subtask's
+ * title and/or done state. Returns 200 with the updated subtask.
+ */
+export async function updateSubtask(req: Request, res: Response): Promise<void> {
+  const { id: userId } = req.user!;
+  const { id: taskId, subtaskId } = req.params as TaskSubtaskParams;
+  const input = req.body as UpdateSubtaskInput;
+
+  const subtask = await tasksService.updateSubtask(userId, taskId, subtaskId, input);
+  res.status(200).json(subtask);
+}
+
+/**
+ * DELETE /api/tasks/:id/subtasks/:subtaskId — delete a subtask.
+ * Returns 204 with no body.
+ */
+export async function deleteSubtask(req: Request, res: Response): Promise<void> {
+  const { id: userId } = req.user!;
+  const { id: taskId, subtaskId } = req.params as TaskSubtaskParams;
+
+  await tasksService.deleteSubtask(userId, taskId, subtaskId);
+  res.status(204).send();
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 Step 10 — comments
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /api/tasks/:id/comments — list the most recent comments on a task.
+ * Returns 200 with up to 50 comments, newest first.
+ */
+export async function listComments(req: Request, res: Response): Promise<void> {
+  const { id: userId } = req.user!;
+  const { id: taskId } = req.params as TaskIdParam;
+
+  const comments = await tasksService.listComments(userId, taskId);
+  res.status(200).json(comments);
+}
+
+/**
+ * POST /api/tasks/:id/comments — post a comment on a task.
+ * Returns 201 with the created comment (with author email).
+ */
+export async function createComment(req: Request, res: Response): Promise<void> {
+  const { id: userId } = req.user!;
+  const { id: taskId } = req.params as TaskIdParam;
+  const input = req.body as CreateCommentInput;
+
+  const comment = await tasksService.createComment(userId, taskId, input);
+  res.status(201).json(comment);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 Step 10 — assignees
+// ---------------------------------------------------------------------------
+
+/**
+ * PUT /api/tasks/:id/assignees — replace the full assignee set on a task.
+ * Returns 200 with the new assignee set (`{ userId, email }[]`).
+ */
+export async function setAssignees(req: Request, res: Response): Promise<void> {
+  const { id: userId } = req.user!;
+  const { id: taskId } = req.params as TaskIdParam;
+  const input = req.body as SetAssigneesInput;
+
+  const assignees = await tasksService.setAssignees(userId, taskId, input);
+  res.status(200).json(assignees);
 }

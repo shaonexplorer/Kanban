@@ -1,5 +1,14 @@
 import api from "@/lib/api";
-import type { BoardDetail, Task, Column, BoardMember } from "./types";
+import type {
+  BoardDetail,
+  Task,
+  Column,
+  BoardMember,
+  TaskSubtask,
+  TaskComment,
+  TaskAssignee,
+  TaskPriority,
+} from "./types";
 
 /**
  * Tiny typed wrappers around the existing axios instance.
@@ -10,12 +19,16 @@ import type { BoardDetail, Task, Column, BoardMember } from "./types";
  * backend.
  */
 
+// ---------------------------------------------------------------------------
+// Boards
+// ---------------------------------------------------------------------------
+
 export function fetchBoard(boardId: string): Promise<BoardDetail> {
   return api.get<BoardDetail>(`/boards/${boardId}`).then((r) => r.data);
 }
 
 export function fetchMyBoards(): Promise<
-  Array<{ id: string; title: string; role: "OWNER" | "MEMBER"; createdAt: string }>
+  Array<{ id: string; title: string; role: "OWNER" | "ADMIN" | "MEMBER"; createdAt: string }>
 > {
   return api.get("/boards").then((r) => r.data);
 }
@@ -31,11 +44,11 @@ export const myBoardsQueryKey = ["boards"] as const;
 
 export interface CreateBoardInput {
   title: string;
-  /** Phase 5 Step 5: optional. Persistence lands in Step 10. */
+  /** Phase 5 Step 10 — persisted server-side. */
   projectKey?: string;
-  /** Phase 5 Step 5: optional. Persistence lands in Step 10. */
+  /** Phase 5 Step 10 — persisted server-side. */
   colorIdentity?: "PRIMARY" | "TERTIARY" | "SECONDARY" | "ERROR" | "OUTLINE";
-  /** Phase 5 Step 5: optional. Persistence lands in Step 10. */
+  /** Phase 5 Step 10 — persisted server-side. */
   template?: "SOFTWARE_ENG" | "INCIDENT_MGMT";
 }
 
@@ -54,7 +67,7 @@ export function createBoard(body: CreateBoardInput): Promise<BoardMutationResult
 
 export interface UpdateBoardInput {
   title?: string;
-  /** Phase 5 Step 5: optional. Persistence lands in Step 10. */
+  /** Phase 5 Step 10 — persisted server-side. */
   linkSharing?: "DISABLED" | "VIEW";
 }
 
@@ -67,25 +80,9 @@ export function updateBoard(
     .then((r) => r.data);
 }
 
-export interface UpdateTaskInput {
-  title?: string;
-  description?: string | null;
-  /** Phase 5 Step 5: optional. Persistence lands in Step 10. */
-  starred?: boolean;
-}
-
-export function updateTask(
-  taskId: string,
-  body: UpdateTaskInput,
-): Promise<Task> {
-  return api
-    .patch<Task>(`/tasks/${taskId}`, body)
-    .then((r) => r.data);
-}
-
-export function deleteTask(taskId: string): Promise<void> {
-  return api.delete(`/tasks/${taskId}`).then(() => undefined);
-}
+// ---------------------------------------------------------------------------
+// Board members (invite / remove / role change)
+// ---------------------------------------------------------------------------
 
 export interface InviteMemberInput {
   /** Either a known userId (UUID) or an email of a registered user.
@@ -93,7 +90,7 @@ export interface InviteMemberInput {
    * `InviteMemberSchema`. */
   userId?: string;
   email?: string;
-  /** Phase 5 Step 5: optional. Defaults to "MEMBER" server-side. */
+  /** Phase 5 Step 10 — persisted server-side. Defaults to "MEMBER". */
   role?: "MEMBER" | "ADMIN";
 }
 
@@ -123,20 +120,23 @@ export function removeBoardMember(
   boardId: string,
   userId: string,
 ): Promise<void> {
-  return api
-    .delete(`/boards/${boardId}/members/${userId}`)
-    .then(() => undefined);
+  return api.delete(`/boards/${boardId}/members/${userId}`).then(() => undefined);
 }
 
-export function moveTask(
-  sourceColumnId: string,
-  taskId: string,
-  body: { toColumnId: string; toIndex: number },
-): Promise<Task> {
+/** Phase 5 Step 10 — change a member's non-owner role. */
+export function updateBoardMemberRole(
+  boardId: string,
+  userId: string,
+  role: "ADMIN" | "MEMBER",
+): Promise<BoardMember> {
   return api
-    .post<Task>(`/columns/${sourceColumnId}/tasks/${taskId}/move`, body)
+    .patch<BoardMember>(`/boards/${boardId}/members/${userId}`, { role })
     .then((r) => r.data);
 }
+
+// ---------------------------------------------------------------------------
+// Columns
+// ---------------------------------------------------------------------------
 
 export function moveColumn(
   columnId: string,
@@ -147,7 +147,8 @@ export function moveColumn(
     .then((r) => r.data);
 }
 
-/** Response from `POST /api/boards/:boardId/columns` — a freshly
+/**
+ * Response from `POST /api/boards/:boardId/columns` — a freshly
  *  appended column in the server's wire shape. The cache side of
  *  the create-column mutation maps this to a full `Column` (with
  *  an empty `tasks` array) so the new column appears in the
@@ -193,20 +194,141 @@ export function deleteColumn(columnId: string): Promise<void> {
   return api.delete(`/columns/${columnId}`).then(() => undefined);
 }
 
-/**
- * `DELETE /api/boards/:id`. Soft-deletes the board (server stamps
- * `deletedAt = now()`); subsequent reads 404. Owner-only on the
- * server (`requireBoardOwner`). No Undo on the client — matches
- * `deleteColumn` (re-creating a cascade-wiped tree of columns
- * and tasks from a snapshot is too expensive / race-prone).
- */
+// ---------------------------------------------------------------------------
+// Tasks (create / move / delete)
+// ---------------------------------------------------------------------------
+
+export function moveTask(
+  sourceColumnId: string,
+  taskId: string,
+  body: { toColumnId: string; toIndex: number },
+): Promise<Task> {
+  return api
+    .post<Task>(`/columns/${sourceColumnId}/tasks/${taskId}/move`, body)
+    .then((r) => r.data);
+}
+
+export function createTask(
+  columnId: string,
+  body: { title: string; description?: string },
+): Promise<Task> {
+  return api
+    .post<Task>(`/columns/${columnId}/tasks`, body)
+    .then((r) => r.data);
+}
+
+// ---------------------------------------------------------------------------
+// Tasks — Step 10: update (PATCH /api/tasks/:id)
+// ---------------------------------------------------------------------------
+
+export interface UpdateTaskInput {
+  title?: string;
+  description?: string | null;
+  /** Phase 5 Step 10 — star toggle. */
+  starred?: boolean;
+  /** Phase 5 Step 10 — priority chip. */
+  priority?: TaskPriority | null;
+  /** Phase 5 Step 10 — ISO-8601 datetime string (or null to clear). */
+  dueDate?: string | null;
+  /** Phase 5 Step 10 — story points estimator. */
+  storyPoints?: number | null;
+  /** Phase 5 Step 10 — label chips. */
+  labels?: string[];
+}
+
+export function updateTask(taskId: string, body: UpdateTaskInput): Promise<Task> {
+  return api
+    .patch<Task>(`/tasks/${taskId}`, body)
+    .then((r) => r.data);
+}
+
+export function deleteTask(taskId: string): Promise<void> {
+  return api.delete(`/tasks/${taskId}`).then(() => undefined);
+}
+
 export function deleteBoard(boardId: string): Promise<void> {
   return api.delete(`/boards/${boardId}`).then(() => undefined);
 }
 
-/**
- * Re-export the `BoardMember` type for callers that want to
- * construct a synthetic optimistic member row (the
- * `useInviteMemberMutation` uses this for the "pending" placeholder).
- */
+// ---------------------------------------------------------------------------
+// Tasks — Step 10: subtasks
+// ---------------------------------------------------------------------------
+
+export interface CreateSubtaskInput {
+  title: string;
+}
+
+export interface UpdateSubtaskInput {
+  title?: string;
+  done?: boolean;
+}
+
+export function createSubtask(
+  taskId: string,
+  body: CreateSubtaskInput,
+): Promise<TaskSubtask> {
+  return api
+    .post<TaskSubtask>(`/tasks/${taskId}/subtasks`, body)
+    .then((r) => r.data);
+}
+
+export function updateSubtask(
+  taskId: string,
+  subtaskId: string,
+  body: UpdateSubtaskInput,
+): Promise<TaskSubtask> {
+  return api
+    .patch<TaskSubtask>(`/tasks/${taskId}/subtasks/${subtaskId}`, body)
+    .then((r) => r.data);
+}
+
+export function deleteSubtask(taskId: string, subtaskId: string): Promise<void> {
+  return api.delete(`/tasks/${taskId}/subtasks/${subtaskId}`).then(() => undefined);
+}
+
+// ---------------------------------------------------------------------------
+// Tasks — Step 10: comments
+// ---------------------------------------------------------------------------
+
+export interface CreateCommentInput {
+  body: string;
+}
+
+/** Query key for a task's comments (used by the TaskModal when open). */
+export const taskCommentsQueryKey = (taskId: string) =>
+  ["task-comments", taskId] as const;
+
+export function fetchComments(taskId: string): Promise<TaskComment[]> {
+  return api.get<TaskComment[]>(`/tasks/${taskId}/comments`).then((r) => r.data);
+}
+
+export function createComment(
+  taskId: string,
+  body: CreateCommentInput,
+): Promise<TaskComment> {
+  return api
+    .post<TaskComment>(`/tasks/${taskId}/comments`, body)
+    .then((r) => r.data);
+}
+
+// ---------------------------------------------------------------------------
+// Tasks — Step 10: assignees
+// ---------------------------------------------------------------------------
+
+export interface SetAssigneesInput {
+  userIds: string[];
+}
+
+export function setTaskAssignees(
+  taskId: string,
+  body: SetAssigneesInput,
+): Promise<TaskAssignee[]> {
+  return api
+    .put<TaskAssignee[]>(`/tasks/${taskId}/assignees`, body)
+    .then((r) => r.data);
+}
+
+// Re-export the `BoardMember` type for callers that want to
+// construct a synthetic optimistic member row (the
+// `useInviteMemberMutation` uses this for the "pending" placeholder).
 export type { BoardMember };

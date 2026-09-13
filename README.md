@@ -16,13 +16,14 @@ A user can:
 - **Create boards** — each board represents a distinct workspace or project.
 - **Organize workflow columns** — columns represent stages (e.g. Backlog, In
   Progress, Done), reorderable via drag-and-drop or the `PATCH /reorder` API.
-- **Manage tasks** — tasks live within columns and carry title + description.
+- **Manage tasks** — tasks live within columns and carry title + description,
+  plus metadata (starred, priority, due date, story points, labels, assignees)
+  and subtask / comment checklists.
 - **Drag and drop** — reorder tasks within a column or move them across
   columns; ordering uses a Float midpoint scheme with a `PATCH /reorder`
   re-pack fallback.
-- **Collaborate** — owners can invite registered users to a board; invitees
-  accept or decline from an inbox and gain the same authoring access as the
-  owner.
+- **Collaborate** — owners can invite registered users as `ADMIN` or `MEMBER`;
+  invitees accept or decline from an inbox and gain authoring access.
 
 ## Status
 
@@ -32,7 +33,7 @@ A user can:
 | 2     | Boards + board invitations + member access control | ✅ done |
 | 3     | Columns + tasks CRUD, soft-delete boards | ✅ done |
 | 4     | Float-position move + reorder (tasks & columns) | ✅ done |
-| 5     | Polishing & polish (14 steps) | Steps 1–9a + Step 7 (audit) done; steps 8–14 planned |
+| 5     | Polishing & polish (14 steps) | Steps 1–9a, 7, 8, 9, 10 done; 11–14 planned |
 
 Phase 5 details live under `specs/Phase05/Plan.md`.
 
@@ -57,6 +58,14 @@ Phase 5 details live under `specs/Phase05/Plan.md`.
 - **zod** per-module validation, with a generic `validate(schema, source?)`
   middleware that tags handlers with a `kanbanValidate` marker so
   `scripts/audit-routes.mts` can prove every non-public route is validated
+  (36 routes, 7 public, 29 validated)
+- **Rate limiting** — `express-rate-limit` on auth routes (login: 10/15 min,
+  register: 5/hour per IP); `RATE_LIMIT_DISABLED=1` bypasses during local E2E
+- **Structured logging** — `pino` + `pino-http` with `X-Request-Id`
+  correlation; request bodies and the `authorization` header are redacted
+- **Float positions** — `Column.position` and `Task.position` use Float
+  (`@default(1000)`) with midpoint math in `floatPosition.ts`; the
+  `PATCH /reorder` endpoint is the precision escape hatch
 
 ## Project structure
 
@@ -76,20 +85,27 @@ Mini Kanban Board/
 │   └── eslint.config.mjs
 ├── server/                        # Express backend
 │   ├── prisma/
-│   │   ├── schema.prisma          # User, Board, BoardUser, BoardInvitation,
-│   │   │                          # Column, Task (+ Float position)
+│   │   ├── schema.prisma          # User, Board (soft-delete, linkSharing,
+│   │   │                          # projectKey, colorIdentity, template),
+│   │   │                          # BoardUser (BoardRole enum), BoardInvitation,
+│   │   │                          # Column, Task (starred, priority, dueDate,
+│   │   │                          # storyPoints, labels, Float position),
+│   │   │                          # TaskSubtask, TaskComment, TaskAssignee
 │   │   └── migrations/
 │   ├── scripts/audit-routes.mts   # Validates every non-public route has zod
 │   └── src/
 │       ├── app.ts                 # createApp() — helmet, cors, cookie-parser,
-│       │                          # json, auth mw, modules, error mw
-│       ├── common/                # errors, middleware (auth + access-control),
-│       │                          # utils (asyncHandler, floatPosition),
-│       │                          # validators (zod middleware)
+│       │                          # json, pino-http logger, auth mw, modules,
+│       │                          # rate-limit mw, error mw
+│       ├── common/                # errors, middleware (auth, access-control,
+│       │                          # rate-limit, logger), utils (asyncHandler,
+│       │                          # floatPosition), validators (zod middleware,
+│       │                          # envelope), types (express.d.ts)
 │       ├── config/env.ts          # zod-validated env loader
 │       ├── lib/prisma.ts          # PrismaClient singleton (PrismaPg adapter)
 │       └── modules/               # auth/, boards/, board-invitations/,
-│                                  # columns/, tasks/, health/
+│                                  # columns/, tasks/, health/ — each =
+│                                  # controller/service/validation/routes/index
 ├── specs/                         # Per-phase Plan / Requirements / Validation
 └── README.md
 ```
@@ -114,6 +130,8 @@ Mini Kanban Board/
    JWT_EXPIRES_IN=7d
    CORS_ORIGIN=http://localhost:3000
    NODE_ENV=development
+   LOG_LEVEL=info
+   RATE_LIMIT_DISABLED=1  # unset for production to enable rate limiting
    ```
 3. Set up environment variables in `client/kanban-board-client/.env.local`:
    ```
@@ -161,27 +179,32 @@ All API endpoints are prefixed with `/api/`. Authentication is via an httpOnly
 `token` cookie set by `POST /api/auth/login` and `POST /api/auth/register`.
 
 ### Health
-- `GET /health` — liveness check; returns `{status:"ok",db:"up"}` on
-  `SELECT 1` success, `503` otherwise.
+- `GET /health` — liveness check; returns `{status:"ok",timestamp,db:"up"}`
+  on `SELECT 1` success, `503` otherwise.
 
 ### Authentication (`/api/auth`)
-- `POST /api/auth/register` — `{ email, password }` → sets cookie, returns
-  `{ id, email, token }`
-- `POST /api/auth/login` — `{ email, password }` → sets cookie, returns
-  `{ id, email, token }`
+- `POST /api/auth/register` — `{ email, password }` → sets httpOnly `token`
+  cookie, returns `{ id, email, token }`. Rate-limited (5/hr per IP).
+- `POST /api/auth/login` — `{ email, password }` → sets httpOnly `token`
+  cookie, returns `{ id, email, token }`. Rate-limited (10/15min per IP).
 - `GET /api/auth/me` — returns the calling user from the verified JWT
 - `POST /api/auth/logout` — clears the `token` cookie (`204`)
 
+> Rate-limited auth endpoints return `429` with `{ error: "Too many requests, try again later." }` and a `Retry-After` header. Set `RATE_LIMIT_DISABLED=1` in `.env` to bypass during local E2E.
+
 ### Boards (`/api/boards`)
 - `GET /api/boards` — list boards the caller owns or has been invited to
-- `POST /api/boards` — `{ title }` → create a board (caller becomes owner)
+- `POST /api/boards` — `{ title, projectKey?, colorIdentity?, template? }` →
+  create a board (caller becomes owner); `projectKey` ≤ 6 uppercased chars
 - `GET /api/boards/:id` — board + columns (tasks nested, ordered by position
   ascending) + members (owner first, then by `joinedAt`)
-- `PATCH /api/boards/:id` — owner-only; update `title`
+- `PATCH /api/boards/:id` — owner-only; update `title` and/or `linkSharing`
 - `DELETE /api/boards/:id` — owner-only; soft-delete via `deletedAt`
 - `GET /api/boards/:id/members` — list members
 - `POST /api/boards/:id/members` — owner-only; invite a registered user by
-  email (`{ email }`)
+  email (`{ email, role?: "ADMIN" | "MEMBER" }`, default `MEMBER`)
+- `PATCH /api/boards/:id/members/:userId` — owner-only; change role to
+  `ADMIN` or `MEMBER` (owner's role is immutable → 400)
 - `DELETE /api/boards/:id/members/:userId` — owner-only; remove a member
 
 ### Board invitations (`/api/board-invitations`)
@@ -206,10 +229,18 @@ All API endpoints are prefixed with `/api/`. Authentication is via an httpOnly
 - `POST /api/columns/:columnId/tasks` — `{ title, description? }` → create
 - `POST /api/columns/:columnId/tasks/:taskId/move` — `{ toColumnId, toIndex }`
   → move within or across columns (cross-board returns `403`)
-- `GET /api/tasks/:id` — read
-- `PATCH /api/tasks/:id` — `{ title?, description? }`; `position` and
-  `columnId` are not accepted here (use `move`)
+- `GET /api/tasks/:id` — read (includes `subtasks`, `assignees`, `labels`)
+- `PATCH /api/tasks/:id` — `{ title?, description?, starred?, priority?,
+  dueDate?, storyPoints?, labels? }`; `position` and `columnId` are not
+  accepted here (use `move`); `assignees` is managed separately
 - `DELETE /api/tasks/:id` — delete
+- `PUT /api/tasks/:id/assignees` — `{ userIds: string[] }` → replace the
+  full assignee set (200 with the new list)
+- `POST /api/tasks/:id/subtasks` — `{ title }` → create subtask (201)
+- `PATCH /api/tasks/:id/subtasks/:subtaskId` — `{ title?, done? }` → update
+- `DELETE /api/tasks/:id/subtasks/:subtaskId` — delete subtask (204)
+- `GET /api/tasks/:id/comments` — list comments (newest first, ≤ 50)
+- `POST /api/tasks/:id/comments` — `{ body }` (1–5000 chars) → create (201)
 
 ## Ordering: Float positions
 
@@ -243,9 +274,12 @@ requireAuth → validate(ParamSchema, "params") → loadBoard|loadColumn|loadTas
 
 ## Testing
 
-No `jest` / `vitest` yet — Steps 11 / 12 of Phase 5 plan to add them. Until
-then, validation is exercised by three PowerShell end-to-end scripts in
-`server/`:
+No `jest` / `vitest` suites yet — Steps 11 / 12 of Phase 5 plan to add them.
+Until then, validation is exercised by three PowerShell end-to-end scripts in
+`server/`, all passing (48 + 59 + 45 = 152 assertions). Phase 5 Steps 7–10 are
+complete: the route-validation audit, httpOnly-cookie auth, rate limiting, and
+the schema widening (subtasks / comments / assignees / board fields / role
+enum) are all covered by these scripts.
 
 - `phase2-e2e.ps1` — 48 assertions (uses `WebRequestSession` as a cookie jar
   for the httpOnly `token` cookie)
@@ -253,7 +287,9 @@ then, validation is exercised by three PowerShell end-to-end scripts in
 - `phase4-step7-e2e.ps1` — 45 assertions covering column-move, validation
   audit, and frontend static checks
 
-Run them from `server/` while `npm run dev` is up on `:4000`.
+Run them from `server/` while `npm run dev` is up on `:4000`. Set
+`RATE_LIMIT_DISABLED=1` in `.env` to bypass auth rate limits during local E2E
+runs.
 
 ## License
 

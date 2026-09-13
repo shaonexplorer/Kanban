@@ -86,7 +86,7 @@ export function SidebarOverlay({ open, onClose, tier }: SidebarOverlayProps) {
             <Icon name="close" className="w-5 h-5" />
           </button>
         </div>
-        <div className="flex-1 min-h-0 overflow-y-auto board-scroll">
+        <div className="flex-1 min-h-0 overflow-y-auto">
           {/* Render the existing Sidebar with `collapsed` left
            * undefined — the overlay wrapper owns the layout, so the
            * sidebar chrome inside can stay in its expanded form. */}
