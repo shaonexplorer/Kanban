@@ -7,6 +7,7 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from "react";
+import { format, parseISO } from "date-fns";
 import { Icon } from "./Icon";
 import { UserAvatar } from "./UserAvatar";
 import type { Task, TaskPriority } from "../types";
@@ -47,12 +48,7 @@ export interface ModalLabel {
   id: string;
   name: string;
   /** Kinetic Grid token name (without the `bg-` / `text-` prefix). */
-  token:
-    | "primary"
-    | "secondary"
-    | "tertiary"
-    | "error"
-    | "outline";
+  token: "primary" | "secondary" | "tertiary" | "error" | "outline";
 }
 
 export interface TaskModalProps {
@@ -211,6 +207,18 @@ type DeleteState = "idle" | "confirming";
  * its natural `1em`-ish size by default, so sizing via Tailwind's
  * width/height utilities is the idiomatic v4 approach.
  */
+/**
+ * Formats an ISO timestamp into a readable audit string
+ * (e.g. "Sep 13, 2026 at 9:30 AM"). Falls back to the raw
+ * value if the input can't be parsed.
+ */
+function formatDate(iso: string): string {
+  const parsed = parseISO(iso);
+  return Number.isNaN(parsed.getTime())
+    ? iso
+    : format(parsed, "MMM d, yyyy h:mm a");
+}
+
 export function TaskModal(props: TaskModalProps) {
   const {
     open,
@@ -687,7 +695,10 @@ export function TaskModal(props: TaskModalProps) {
                   style={{ width: 16, height: 16 }}
                 />
               </button>
-              <div className="w-px h-4 bg-surface-container-highest mx-1" aria-hidden="true" />
+              <div
+                className="w-px h-4 bg-surface-container-highest mx-1"
+                aria-hidden="true"
+              />
               <button
                 type="button"
                 onClick={onClose}
@@ -972,7 +983,10 @@ export function TaskModal(props: TaskModalProps) {
                   <div className="flex items-center gap-space-2xs text-outline">
                     <IconButton title="Bold" name="format_bold" />
                     <IconButton title="Inline code" name="code" />
-                    <IconButton title="Mention teammate" name="alternate_email" />
+                    <IconButton
+                      title="Mention teammate"
+                      name="alternate_email"
+                    />
                     <IconButton title="Attach assets" name="attach_file" />
                   </div>
                   <button
@@ -1248,11 +1262,15 @@ export function TaskModal(props: TaskModalProps) {
             <div className="pt-space-md space-y-1 text-outline font-label-mono-sm text-label-mono-sm border-t border-surface-container-highest">
               <div className="flex items-center justify-between">
                 <span>Created</span>
-                <span className="text-on-surface-variant">{createdAt}</span>
+                <span className="text-on-surface-variant">
+                  {formatDate(createdAt)}
+                </span>
               </div>
               <div className="flex items-center justify-between">
                 <span>Updated</span>
-                <span className="text-on-surface-variant">{updatedAt}</span>
+                <span className="text-on-surface-variant">
+                  {formatDate(updatedAt)}
+                </span>
               </div>
             </div>
           </aside>
@@ -1304,11 +1322,7 @@ function IconButton({
   name,
 }: {
   title: string;
-  name:
-    | "format_bold"
-    | "code"
-    | "alternate_email"
-    | "attach_file";
+  name: "format_bold" | "code" | "alternate_email" | "attach_file";
 }) {
   return (
     <button
